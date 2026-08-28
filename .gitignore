@@ -27,6 +27,9 @@ test/*.pdf
 *.pdf
 tmp/
 temp/
+dist/
+*.tar.gz
+*.zip
 
 # Code Quality, Testing & Cache
 .phpunit.cache
