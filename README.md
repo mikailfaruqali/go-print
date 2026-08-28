@@ -20,8 +20,8 @@ A modern, high-performance HTML-to-PDF converter for Laravel 11+ and PHP 8.4+, p
 
 ## Requirements
 
-- PHP **8.4+**
-- Laravel **11.0+** or **12.0+**
+- PHP **8.2+**, **8.3+**, **8.4+**, **8.5+**
+- Laravel **10.0+**, **11.0+**, **12.0+**, or **13.0+**
 - Google Chrome, Chromium, Brave, or Microsoft Edge installed on the host system
 
 ---
