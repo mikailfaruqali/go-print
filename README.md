@@ -1,91 +1,195 @@
-# pdf
+# PDF for Laravel
 
-A standalone CLI tool that converts HTML to PDF using headless Google Chrome, Chromium, Brave, or Microsoft Edge.
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/mikailfaruqali/pdf.svg?style=flat-square)](https://packagist.org/packages/mikailfaruqali/pdf)
+[![Total Downloads](https://img.shields.io/packagist/dt/mikailfaruqali/pdf.svg?style=flat-square)](https://packagist.org/packages/mikailfaruqali/pdf)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
-- ⚡ **Near-instant startup**: written in Go, compiles to a single static binary
-- 🎨 **Full modern CSS support**: Grid, Flexbox, Tailwind, Web fonts, Canvas, SVG
-- 📑 **Independent headers & footers**: sit flush against the paper edge, full-bleed backgrounds supported
-- 🔢 **Page numbering**: `{page}`, `{pages}`, `{pageNumber}`, `{totalPages}`, `{page+1}` placeholders
-- 🏷️ **Watermarks**: stamp HTML text or images diagonally across every page with custom opacity
-- 📐 **Paper sizes**: standard presets (`A4`, `Letter`, `Legal`, etc.) or custom dimensions (`210x297mm`)
-- 🔒 **Zero cloud dependencies**: runs 100% locally on your machine or server
+A modern, high-performance HTML-to-PDF converter for Laravel 11+ and PHP 8.4+, powered by headless Chrome / Chromium and the compiled Go binary `pdf`.
+
+---
+
+## Features
+
+- 🚀 **Blazing Fast**: Direct headless Chrome execution via a lightweight Go core.
+- 🎨 **Modern CSS**: Full support for CSS Grid, Flexbox, Tailwind CSS, SVG, custom fonts, and `@page` rules.
+- 📑 **Headers, Footers & Watermarks**: Multi-fragment support with dynamic `{page}` and `{pages}` placeholders.
+- 🛠️ **Developer Friendly**: Fluent, expressive API with first-class Laravel `Renderable` (Blade views) support.
+- 📦 **Automated Binary Installer**: Built-in `php artisan pdf:install` to download pre-built binaries for your OS/architecture.
+
+---
+
+## Requirements
+
+- PHP **8.4+**
+- Laravel **11.0+** or **12.0+**
+- Google Chrome, Chromium, Brave, or Microsoft Edge installed on the host system
 
 ---
 
 ## Installation
 
-### Pre-built binaries
-
-Download the latest binary for your OS and architecture from [Releases](https://github.com/mikailfaruqali/pdf/releases).
-
-### Build from source
-
-Requires [Go 1.23+](https://golang.org/dl/):
+Install the package via Composer:
 
 ```bash
-# Windows
-go build -ldflags="-s -w" -o pdf.exe .
-
-# Linux
-go build -ldflags="-s -w" -o pdf .
-
-# macOS (Apple Silicon)
-go build -ldflags="-s -w" -o pdf-darwin-arm64 .
+composer require mikailfaruqali/pdf
 ```
 
-Put the binary anywhere on your `PATH` and call it as `pdf`.
-
----
-
-## Quick start
+Publish the configuration file (optional):
 
 ```bash
-# Basic conversion
-pdf \
-  --content invoice.html \
-  --output invoice.pdf \
-  --paper A4 \
-  --margin 10mm
+php artisan vendor:publish --tag=pdf-config
+```
 
-# With header, footer, and page numbers
-pdf \
-  --content invoice.html \
-  --output invoice.pdf \
-  --header header.html \
-  --footer footer.html \
-  --header-height 25mm \
-  --footer-height 15mm
+Download and install the native Go binary for your platform:
 
-# Pipe HTML via stdin, output PDF to stdout
-cat invoice.html | pdf --content - --output - > invoice.pdf
+```bash
+php artisan pdf:install
+```
+
+Verify your environment (checks both `pdf` binary and headless browser):
+
+```bash
+php artisan pdf:check
 ```
 
 ---
 
-## CLI Options
+## Configuration
 
-| Flag | Description | Default |
-|---|---|---|
-| `--content <path>` | Content HTML file, or `-` for stdin (**required**) | |
-| `--output <path>` | Output PDF file, or `-` for stdout (**required**) | |
-| `--header <path>` | Header HTML file, repeated on every page | |
-| `--footer <path>` | Footer HTML file, repeated on every page | |
-| `--watermark <path>` | Watermark HTML file, stamped on every page | |
-| `--paper <size>` | `A0`–`A6`, `Letter`, `Legal`, `Tabloid`, or `WIDTHxHEIGHT` | `A4` |
-| `--orientation <mode>` | `portrait` or `landscape` | `portrait` |
-| `--margin <dim>` | Set all four margins at once (`10mm`, `0.5in`, `20px`) | |
-| `--header-height <dim>` | Reserved header height | `0` |
-| `--footer-height <dim>` | Reserved footer height | `0` |
-| `--watermark-opacity <n>` | Opacity from `0.0` to `1.0` | `0.3` |
-| `--watermark-behind` | Place watermark under content | `false` |
-| `--scale <n>` | Render scale factor (`0.1` to `2.0`) | `1.0` |
-| `--chrome <path>` | Path to browser executable | *auto-detected* |
-| `--timeout <sec>` | Per-page render timeout | `120` |
-| `--quiet` | Suppress progress logs | `false` |
-| `--version` | Print version and exit | |
+The published `config/pdf.php` file allows you to customize defaults:
+
+```php
+return [
+    'binary_path' => env('PDF_BINARY_PATH'),
+    'chrome_path' => env('PDF_CHROME_PATH'),
+    'timeout'     => (int) env('PDF_TIMEOUT', 120),
+    'temp_path'   => env('PDF_TEMP_PATH'),
+];
+```
+
+---
+
+## Basic Usage
+
+### Using Blade Views
+
+You can pass standard strings or any Laravel `Renderable` (such as `view()`):
+
+```php
+use PDF\Facades\Pdf;
+
+// Download PDF as response
+return Pdf::make()
+    ->content(view('invoices.show', ['invoice' => $invoice]))
+    ->paper('A4')
+    ->download('invoice-1001.pdf');
+
+// Display inline in browser
+return Pdf::make()
+    ->content(view('reports.monthly'))
+    ->inline('monthly-report.pdf');
+
+// Save directly to disk
+$path = Pdf::make()
+    ->content('<h1>Hello World</h1>')
+    ->save(storage_path('app/exports/hello.pdf'));
+
+// Get raw PDF bytes
+$pdfBytes = Pdf::make()
+    ->content('<h1>Raw Output</h1>')
+    ->get();
+```
+
+---
+
+## Advanced Options
+
+### Headers, Footers & Page Numbers
+
+Headers and footers support dynamic placeholders `{page}` (or `{pageNumber}`) and `{pages}` (or `{totalPages}`), as well as math expressions like `{page+1}`:
+
+```php
+return Pdf::make()
+    ->content(view('documents.contract'))
+    ->header(view('pdf.header'))
+    ->footer('<div style="text-align: right; font-size: 10px;">Page {page} of {pages}</div>')
+    ->headerHeight('25mm')
+    ->footerHeight('15mm')
+    ->headerSpacing('4mm')
+    ->footerSpacing('4mm')
+    ->download('contract.pdf');
+```
+
+### Watermark
+
+```php
+return Pdf::make()
+    ->content(view('invoices.preview'))
+    ->watermark('<h1 style="color: red; transform: rotate(-45deg);">CONFIDENTIAL</h1>')
+    ->watermarkOpacity(0.15)
+    ->watermarkBehind(true)
+    ->download('confidential.pdf');
+```
+
+### Full Fluent API Reference
+
+```php
+Pdf::make()
+    ->content(string|Renderable $html)
+    ->header(string|Renderable $html)
+    ->footer(string|Renderable $html)
+    ->watermark(string|Renderable $html)
+    ->paper('A4')                          // A0-A6, B4, B5, Letter, Legal, etc.
+    ->orientation('portrait'|'landscape')
+    ->margin('10mm')                       // Applies to all 4 sides
+    ->marginTop('5mm')
+    ->marginBottom('5mm')
+    ->marginLeft('5mm')
+    ->marginRight('5mm')
+    ->headerHeight('25mm')
+    ->footerHeight('15mm')
+    ->headerSpacing('2mm')
+    ->footerSpacing('2mm')
+    ->headerOffset('0mm')
+    ->footerOffset('0mm')
+    ->watermarkOpacity(0.3)
+    ->watermarkBehind(true)
+    ->scale(1.0)                           // 0.1 to 2.0
+    ->pageOffset(0)
+    ->totalOffset(0)
+    ->title('Invoice #1001')
+    ->author('Mikail Faruq Ali')
+    ->subject('Billing Invoice')
+    ->keywords('billing, invoice, pdf')
+    ->baseUrl(public_path('assets'))
+    ->chromePath('/usr/bin/google-chrome')
+    ->timeout(120)
+    ->quiet()
+    ->download('invoice.pdf')              // Return download Response
+    ->inline('invoice.pdf')                // Return inline preview Response
+    ->save('/path/to/invoice.pdf')         // Save to disk and return path
+    ->toFile('/path/to/invoice.pdf')       // Alias for save()
+    ->get();                               // Return binary PDF string
+```
+
+---
+
+## Artisan Commands
+
+### `php artisan pdf:install`
+Detects system OS and architecture and downloads the matching `pdf` executable from GitHub Releases (`github.com/mikailfaruqali/pdf/releases/latest`) to `storage/pdf/pdf` (or `pdf.exe` on Windows), sets executable permissions, and updates `.env`.
+
+Options:
+- `--force`: Overwrite existing binary if already present.
+- `--tag=latest`: Specify release tag to download.
+
+### `php artisan pdf:check`
+Validates that:
+1. The `pdf` binary is installed, accessible, and executable.
+2. Google Chrome / Chromium is installed and operational.
 
 ---
 
 ## License
 
-MIT
+The MIT License (MIT).

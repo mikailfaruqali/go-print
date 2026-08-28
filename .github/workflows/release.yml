@@ -68,7 +68,7 @@ jobs:
           check-latest: true
 
       - name: Build binary
-        working-directory: engine
+        working-directory: bin
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -79,13 +79,13 @@ jobs:
       - name: Package archive (tar.gz)
         if: matrix.archive_ext == '.tar.gz'
         run: |
-          cd engine
+          cd bin
           tar -czf ../${{ matrix.asset_name }} ${{ matrix.binary_name }}
 
       - name: Package archive (zip)
         if: matrix.archive_ext == '.zip'
         run: |
-          cd engine
+          cd bin
           zip ../${{ matrix.asset_name }} ${{ matrix.binary_name }}
 
       - name: Upload release asset

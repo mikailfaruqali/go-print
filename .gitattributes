@@ -19,7 +19,7 @@
 *.go export-ignore
 go.mod export-ignore
 go.sum export-ignore
-/engine export-ignore
+/bin export-ignore
 
 # Repository & CI files
 /.github export-ignore

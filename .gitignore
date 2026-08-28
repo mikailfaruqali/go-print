@@ -13,7 +13,6 @@ pdf
 pdf.exe
 snpdf
 snpdf-*
-bin/
 
 # Go build & test artifacts
 *.test
