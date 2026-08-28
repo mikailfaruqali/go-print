@@ -1,19 +1,19 @@
-# Binaries
+# Dependencies
+/vendor/
+vendor/
+composer.lock
+
+# Go Binaries & Builds
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+pdf
+pdf.exe
 snpdf
-snpdf-arm
-snpdf-darwin-*
-
-# Test outputs and temporary files
-test/output.pdf
-test/*.pdf
-*.pdf
-tmp/
-temp/
+snpdf-*
+bin/
 
 # Go build & test artifacts
 *.test
@@ -22,8 +22,34 @@ temp/
 cpu.pprof
 mem.pprof
 
+# Test outputs & temporary files
+test/output.pdf
+test/*.pdf
+*.pdf
+tmp/
+temp/
+
+# Code Quality, Testing & Cache
+.phpunit.cache
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpstan.cache
+.pest/
+
+# Environment files
+.env
+.env.backup
+.env.production
+.env.local
+*.local
+
 # OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
 # IDEs and editors
@@ -32,3 +58,5 @@ Thumbs.db
 *.swp
 *.swo
 *~
+*.sublime-project
+*.sublime-workspace

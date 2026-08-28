@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace PDF\Facades;
 
+use Illuminate\Contracts\Support\Renderable;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Facade;
 use PDF\Pdf as PdfBuilder;
 
 /**
  * @method static PdfBuilder make()
- * @method static PdfBuilder content(\Illuminate\Contracts\Support\Renderable|string $html)
- * @method static PdfBuilder header(\Illuminate\Contracts\Support\Renderable|string $html)
- * @method static PdfBuilder footer(\Illuminate\Contracts\Support\Renderable|string $html)
- * @method static PdfBuilder watermark(\Illuminate\Contracts\Support\Renderable|string $html)
+ * @method static PdfBuilder content(Renderable|string $html)
+ * @method static PdfBuilder header(Renderable|string $html)
+ * @method static PdfBuilder footer(Renderable|string $html)
+ * @method static PdfBuilder watermark(Renderable|string $html)
  * @method static PdfBuilder paper(string $paper)
  * @method static PdfBuilder orientation(string $orientation)
  * @method static PdfBuilder margin(string $margin)
@@ -40,13 +42,13 @@ use PDF\Pdf as PdfBuilder;
  * @method static PdfBuilder timeout(int $timeout)
  * @method static PdfBuilder chromePath(string $chromePath)
  * @method static PdfBuilder binaryPath(string $binaryPath)
- * @method static \Illuminate\Http\Response download(string $filename = 'document.pdf')
- * @method static \Illuminate\Http\Response inline(string $filename = 'document.pdf')
+ * @method static Response download(string $filename = 'document.pdf')
+ * @method static Response inline(string $filename = 'document.pdf')
  * @method static string save(string $path)
  * @method static string toFile(string $path)
  * @method static string get()
  *
- * @see \PDF\Pdf
+ * @see PdfBuilder
  */
 class Pdf extends Facade
 {

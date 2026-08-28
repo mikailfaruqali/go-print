@@ -17,8 +17,8 @@ class PdfServiceProvider extends ServiceProvider
             'pdf'
         );
 
-        $this->app->bind('pdf', function () {
-            return new Pdf();
+        $this->app->bind('pdf', function (): Pdf {
+            return new Pdf;
         });
     }
 

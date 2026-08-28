@@ -5,18 +5,20 @@ declare(strict_types=1);
 namespace PDF\Console;
 
 use Illuminate\Console\Command;
+use PDF\Pdf;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 class CheckCommand extends Command
 {
-    protected $signature = 'pdf:check';
+    protected $signature = 'snpdf:check';
 
-    protected $description = 'Verify that the pdf binary and headless Chrome/Chromium are installed and working';
+    protected $description = 'Verify that the snpdf binary and headless Chrome/Chromium are installed and working';
 
     public function handle(): int
     {
-        $this->info('Checking pdf requirements and environment...');
+        $this->info('Checking snpdf requirements and environment...');
         $this->newLine();
 
         $binaryOk = $this->checkPdfBinary();
@@ -26,7 +28,7 @@ class CheckCommand extends Command
         $this->newLine();
 
         if ($binaryOk && $chromeOk) {
-            $this->info('✓ All systems operational! pdf is ready to generate PDFs.');
+            $this->info('✓ All systems operational! snpdf is ready to generate PDFs.');
 
             return self::SUCCESS;
         }
@@ -38,19 +40,19 @@ class CheckCommand extends Command
 
     private function checkPdfBinary(): bool
     {
-        $this->line('<comment>1. Checking pdf Binary:</comment>');
+        $this->line('<comment>1. Checking snpdf Binary:</comment>');
 
         try {
-            /** @var \PDF\Pdf $builder */
-            $builder = app('pdf');
+            /** @var Pdf $builder */
+            $builder = resolve('pdf');
             $binaryPath = $builder->resolveBinaryPath();
 
             $this->line("   - Binary located at: <info>{$binaryPath}</info>");
 
-            if (!is_executable($binaryPath) && PHP_OS_FAMILY !== 'Windows') {
+            if (! is_executable($binaryPath) && PHP_OS_FAMILY !== 'Windows') {
                 $this->error("   - File exists but is not executable. Run 'chmod +x {$binaryPath}'.");
 
-                return false;
+                return FALSE;
             }
 
             $process = new Process([$binaryPath, '--version']);
@@ -59,19 +61,19 @@ class CheckCommand extends Command
             if ($process->isSuccessful()) {
                 $version = trim($process->getOutput());
                 $this->line("   - Binary version:    <info>{$version}</info>");
-                $this->info('   ✓ pdf binary is working properly.');
+                $this->info('   ✓ snpdf binary is working properly.');
 
-                return true;
+                return TRUE;
             }
 
-            $this->error('   ✗ Failed executing pdf binary: ' . trim($process->getErrorOutput()));
+            $this->error('   ✗ Failed executing snpdf binary: ' . trim($process->getErrorOutput()));
 
-            return false;
-        } catch (\Throwable $throwable) {
+            return FALSE;
+        } catch (Throwable $throwable) {
             $this->error("   ✗ {$throwable->getMessage()}");
-            $this->line("     Run <comment>php artisan pdf:install</comment> to install it automatically.");
+            $this->line("     Run <comment>php artisan snpdf:install</comment> to install it automatically.");
 
-            return false;
+            return FALSE;
         }
     }
 
@@ -98,7 +100,7 @@ class CheckCommand extends Command
         $this->error('   ✗ No Chrome, Chromium, Brave, or Edge executable found in standard locations.');
         $this->line('     Please install Google Chrome / Chromium or configure PDF_CHROME_PATH in your .env file.');
 
-        return false;
+        return FALSE;
     }
 
     private function testBrowserExecutable(string $path): bool
@@ -111,12 +113,12 @@ class CheckCommand extends Command
             $this->line("   - Browser version:   <info>{$version}</info>");
             $this->info('   ✓ Chrome/Chromium is installed and accessible.');
 
-            return true;
+            return TRUE;
         }
 
         $this->warn("   - Found executable at {$path} but could not get version: " . trim($process->getErrorOutput()));
 
-        return true;
+        return TRUE;
     }
 
     private function detectChromeExecutable(): ?string
@@ -153,13 +155,13 @@ class CheckCommand extends Command
             }
         }
 
-        $finder = new ExecutableFinder();
+        $executableFinder = new ExecutableFinder;
 
-        return $finder->find('google-chrome')
-            ?? $finder->find('google-chrome-stable')
-            ?? $finder->find('chromium')
-            ?? $finder->find('chromium-browser')
-            ?? $finder->find('chrome')
-            ?? $finder->find('msedge');
+        return $executableFinder->find('google-chrome')
+            ?? $executableFinder->find('google-chrome-stable')
+            ?? $executableFinder->find('chromium')
+            ?? $executableFinder->find('chromium-browser')
+            ?? $executableFinder->find('chrome')
+            ?? $executableFinder->find('msedge');
     }
 }

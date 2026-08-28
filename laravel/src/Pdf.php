@@ -13,43 +13,68 @@ use Symfony\Component\Process\Process;
 class Pdf
 {
     private string $contentHtml = '';
-    private ?string $headerHtml = null;
-    private ?string $footerHtml = null;
-    private ?string $watermarkHtml = null;
 
-    private ?string $paper = null;
-    private ?string $orientation = null;
-    private ?string $margin = null;
-    private ?string $marginTop = null;
-    private ?string $marginBottom = null;
-    private ?string $marginLeft = null;
-    private ?string $marginRight = null;
+    private ?string $headerHtml = NULL;
 
-    private ?string $headerHeight = null;
-    private ?string $footerHeight = null;
-    private ?string $headerSpacing = null;
-    private ?string $footerSpacing = null;
-    private ?string $headerOffset = null;
-    private ?string $footerOffset = null;
+    private ?string $footerHtml = NULL;
 
-    private ?float $watermarkOpacity = null;
-    private ?bool $watermarkBehind = null;
+    private ?string $watermarkHtml = NULL;
 
-    private ?float $scale = null;
-    private ?int $pageOffset = null;
-    private ?int $totalOffset = null;
+    private ?string $paper = NULL;
 
-    private ?string $title = null;
-    private ?string $author = null;
-    private ?string $subject = null;
-    private ?string $keywords = null;
-    private ?string $baseUrl = null;
+    private ?string $orientation = NULL;
 
-    private bool $quiet = true;
-    private ?int $timeout = null;
-    private ?string $chromePath = null;
-    private ?string $binaryPath = null;
-    private ?string $tempDirectory = null;
+    private ?string $margin = NULL;
+
+    private ?string $marginTop = NULL;
+
+    private ?string $marginBottom = NULL;
+
+    private ?string $marginLeft = NULL;
+
+    private ?string $marginRight = NULL;
+
+    private ?string $headerHeight = NULL;
+
+    private ?string $footerHeight = NULL;
+
+    private ?string $headerSpacing = NULL;
+
+    private ?string $footerSpacing = NULL;
+
+    private ?string $headerOffset = NULL;
+
+    private ?string $footerOffset = NULL;
+
+    private ?float $watermarkOpacity = NULL;
+
+    private ?bool $watermarkBehind = NULL;
+
+    private ?float $scale = NULL;
+
+    private ?int $pageOffset = NULL;
+
+    private ?int $totalOffset = NULL;
+
+    private ?string $title = NULL;
+
+    private ?string $author = NULL;
+
+    private ?string $subject = NULL;
+
+    private ?string $keywords = NULL;
+
+    private ?string $baseUrl = NULL;
+
+    private bool $quiet = TRUE;
+
+    private ?int $timeout;
+
+    private ?string $chromePath;
+
+    private ?string $binaryPath;
+
+    private ?string $tempDirectory;
 
     public function __construct()
     {
@@ -58,7 +83,7 @@ class Pdf
 
     public static function make(): self
     {
-        return new self();
+        return new self;
     }
 
     public function content(string|Renderable $html): self
@@ -187,7 +212,7 @@ class Pdf
         return $this;
     }
 
-    public function watermarkBehind(bool $behind = true): self
+    public function watermarkBehind(bool $behind = TRUE): self
     {
         $this->watermarkBehind = $behind;
 
@@ -250,7 +275,7 @@ class Pdf
         return $this;
     }
 
-    public function quiet(bool $quiet = true): self
+    public function quiet(bool $quiet = TRUE): self
     {
         $this->quiet = $quiet;
 
@@ -294,13 +319,13 @@ class Pdf
     {
         $directory = dirname($path);
 
-        if (!is_dir($directory)) {
-            mkdir($directory, 0755, true);
+        if (! is_dir($directory)) {
+            mkdir($directory, 0755, TRUE);
         }
 
         $pdfData = $this->get();
 
-        if (file_put_contents($path, $pdfData) === false) {
+        if (file_put_contents($path, $pdfData) === FALSE) {
             throw PdfException::saveFailed($path);
         }
 
@@ -317,7 +342,7 @@ class Pdf
         $formattedFilename = str_ends_with(strtolower($filename), '.pdf') ? $filename : "{$filename}.pdf";
 
         return new Response($this->get(), 200, [
-            'Content-Type'        => 'application/pdf',
+            'Content-Type' => 'application/pdf',
             'Content-Disposition' => "attachment; filename=\"{$formattedFilename}\"",
         ]);
     }
@@ -327,7 +352,7 @@ class Pdf
         $formattedFilename = str_ends_with(strtolower($filename), '.pdf') ? $filename : "{$filename}.pdf";
 
         return new Response($this->get(), 200, [
-            'Content-Type'        => 'application/pdf',
+            'Content-Type' => 'application/pdf',
             'Content-Disposition' => "inline; filename=\"{$formattedFilename}\"",
         ]);
     }
@@ -340,9 +365,9 @@ class Pdf
 
         $candidates = [
             $this->binaryPath,
-            function_exists('storage_path') ? storage_path('pdf' . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf')) : null,
-            function_exists('base_path') ? base_path('pdf' . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf')) : null,
-            function_exists('base_path') ? base_path(PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf') : null,
+            function_exists('storage_path') ? storage_path('pdf' . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf')) : NULL,
+            function_exists('base_path') ? base_path('pdf' . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf')) : NULL,
+            function_exists('base_path') ? base_path(PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf') : NULL,
         ];
 
         foreach ($candidates as $candidate) {
@@ -351,7 +376,7 @@ class Pdf
             }
         }
 
-        $executableFinder = new ExecutableFinder();
+        $executableFinder = new ExecutableFinder;
         $inPath = $executableFinder->find(PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf');
 
         if ($inPath) {
@@ -365,17 +390,17 @@ class Pdf
     {
         $config = function_exists('config') ? config('pdf', []) : [];
 
-        $this->binaryPath     = $config['binary_path'] ?? null;
-        $this->chromePath     = $config['chrome_path'] ?? null;
-        $this->timeout        = $config['timeout'] ?? 120;
-        $this->tempDirectory  = $config['temp_path'] ?? null;
+        $this->binaryPath = $config['binary_path'] ?? NULL;
+        $this->chromePath = $config['chrome_path'] ?? NULL;
+        $this->timeout = $config['timeout'] ?? 120;
+        $this->tempDirectory = $config['temp_path'] ?? NULL;
     }
 
     private function renderHtml(string|Renderable $html): string
     {
-        return match (true) {
+        return match (TRUE) {
             $html instanceof Renderable => $html->render(),
-            default                     => (string) $html,
+            default => $html,
         };
     }
 
@@ -388,7 +413,7 @@ class Pdf
         try {
             $command = [$binary];
 
-            $hasFragments = $this->headerHtml !== null || $this->footerHtml !== null || $this->watermarkHtml !== null;
+            $hasFragments = $this->headerHtml !== NULL || $this->footerHtml !== NULL || $this->watermarkHtml !== NULL;
 
             if ($hasFragments) {
                 $contentPath = $this->createTempHtmlFile($tempDir, 'pdf_content_', $this->contentHtml);
@@ -403,147 +428,147 @@ class Pdf
             $command[] = '--output';
             $command[] = '-';
 
-            if ($this->headerHtml !== null) {
+            if ($this->headerHtml !== NULL) {
                 $headerPath = $this->createTempHtmlFile($tempDir, 'pdf_header_', $this->headerHtml);
                 $tempFiles[] = $headerPath;
                 $command[] = '--header';
                 $command[] = $headerPath;
             }
 
-            if ($this->footerHtml !== null) {
+            if ($this->footerHtml !== NULL) {
                 $footerPath = $this->createTempHtmlFile($tempDir, 'pdf_footer_', $this->footerHtml);
                 $tempFiles[] = $footerPath;
                 $command[] = '--footer';
                 $command[] = $footerPath;
             }
 
-            if ($this->watermarkHtml !== null) {
+            if ($this->watermarkHtml !== NULL) {
                 $watermarkPath = $this->createTempHtmlFile($tempDir, 'pdf_watermark_', $this->watermarkHtml);
                 $tempFiles[] = $watermarkPath;
                 $command[] = '--watermark';
                 $command[] = $watermarkPath;
             }
 
-            if ($this->paper !== null) {
+            if ($this->paper !== NULL) {
                 $command[] = '--paper';
                 $command[] = $this->paper;
             }
 
-            if ($this->orientation !== null) {
+            if ($this->orientation !== NULL) {
                 $command[] = '--orientation';
                 $command[] = $this->orientation;
             }
 
-            if ($this->margin !== null) {
+            if ($this->margin !== NULL) {
                 $command[] = '--margin';
                 $command[] = $this->margin;
             }
 
-            if ($this->marginTop !== null && $this->marginTop !== '0') {
+            if ($this->marginTop !== NULL && $this->marginTop !== '0') {
                 $command[] = '--margin-top';
                 $command[] = $this->marginTop;
             }
 
-            if ($this->marginBottom !== null && $this->marginBottom !== '0') {
+            if ($this->marginBottom !== NULL && $this->marginBottom !== '0') {
                 $command[] = '--margin-bottom';
                 $command[] = $this->marginBottom;
             }
 
-            if ($this->marginLeft !== null && $this->marginLeft !== '0') {
+            if ($this->marginLeft !== NULL && $this->marginLeft !== '0') {
                 $command[] = '--margin-left';
                 $command[] = $this->marginLeft;
             }
 
-            if ($this->marginRight !== null && $this->marginRight !== '0') {
+            if ($this->marginRight !== NULL && $this->marginRight !== '0') {
                 $command[] = '--margin-right';
                 $command[] = $this->marginRight;
             }
 
-            if ($this->headerHeight !== null && $this->headerHeight !== '0') {
+            if ($this->headerHeight !== NULL && $this->headerHeight !== '0') {
                 $command[] = '--header-height';
                 $command[] = $this->headerHeight;
             }
 
-            if ($this->footerHeight !== null && $this->footerHeight !== '0') {
+            if ($this->footerHeight !== NULL && $this->footerHeight !== '0') {
                 $command[] = '--footer-height';
                 $command[] = $this->footerHeight;
             }
 
-            if ($this->headerSpacing !== null && $this->headerSpacing !== '0') {
+            if ($this->headerSpacing !== NULL && $this->headerSpacing !== '0') {
                 $command[] = '--header-spacing';
                 $command[] = $this->headerSpacing;
             }
 
-            if ($this->footerSpacing !== null && $this->footerSpacing !== '0') {
+            if ($this->footerSpacing !== NULL && $this->footerSpacing !== '0') {
                 $command[] = '--footer-spacing';
                 $command[] = $this->footerSpacing;
             }
 
-            if ($this->headerOffset !== null && $this->headerOffset !== '0') {
+            if ($this->headerOffset !== NULL && $this->headerOffset !== '0') {
                 $command[] = '--header-offset';
                 $command[] = $this->headerOffset;
             }
 
-            if ($this->footerOffset !== null && $this->footerOffset !== '0') {
+            if ($this->footerOffset !== NULL && $this->footerOffset !== '0') {
                 $command[] = '--footer-offset';
                 $command[] = $this->footerOffset;
             }
 
-            if ($this->watermarkOpacity !== null) {
+            if ($this->watermarkOpacity !== NULL) {
                 $command[] = '--watermark-opacity';
                 $command[] = (string) $this->watermarkOpacity;
             }
 
-            if ($this->watermarkBehind !== null && $this->watermarkBehind) {
+            if ($this->watermarkBehind !== NULL && $this->watermarkBehind) {
                 $command[] = '--watermark-behind';
             }
 
-            if ($this->scale !== null) {
+            if ($this->scale !== NULL) {
                 $command[] = '--scale';
                 $command[] = (string) $this->scale;
             }
 
-            if ($this->pageOffset !== null && $this->pageOffset !== 0) {
+            if ($this->pageOffset !== NULL && $this->pageOffset !== 0) {
                 $command[] = '--page-offset';
                 $command[] = (string) $this->pageOffset;
             }
 
-            if ($this->totalOffset !== null && $this->totalOffset !== 0) {
+            if ($this->totalOffset !== NULL && $this->totalOffset !== 0) {
                 $command[] = '--total-offset';
                 $command[] = (string) $this->totalOffset;
             }
 
-            if ($this->title !== null && $this->title !== '') {
+            if ($this->title !== NULL && $this->title !== '') {
                 $command[] = '--title';
                 $command[] = $this->title;
             }
 
-            if ($this->author !== null && $this->author !== '') {
+            if ($this->author !== NULL && $this->author !== '') {
                 $command[] = '--author';
                 $command[] = $this->author;
             }
 
-            if ($this->subject !== null && $this->subject !== '') {
+            if ($this->subject !== NULL && $this->subject !== '') {
                 $command[] = '--subject';
                 $command[] = $this->subject;
             }
 
-            if ($this->keywords !== null && $this->keywords !== '') {
+            if ($this->keywords !== NULL && $this->keywords !== '') {
                 $command[] = '--keywords';
                 $command[] = $this->keywords;
             }
 
-            if ($this->baseUrl !== null && $this->baseUrl !== '') {
+            if ($this->baseUrl !== NULL && $this->baseUrl !== '') {
                 $command[] = '--base-url';
                 $command[] = $this->baseUrl;
             }
 
-            if ($this->chromePath !== null && $this->chromePath !== '') {
+            if ($this->chromePath !== NULL && $this->chromePath !== '') {
                 $command[] = '--chrome';
                 $command[] = $this->chromePath;
             }
 
-            if ($this->timeout !== null) {
+            if ($this->timeout !== NULL) {
                 $command[] = '--timeout';
                 $command[] = (string) $this->timeout;
             }
@@ -555,13 +580,13 @@ class Pdf
             $process = new Process($command);
             $process->setTimeout($this->timeout ?? 120);
 
-            if (!$hasFragments) {
+            if (! $hasFragments) {
                 $process->setInput($this->contentHtml);
             }
 
             $process->run();
 
-            if (!$process->isSuccessful()) {
+            if (! $process->isSuccessful()) {
                 throw PdfException::executionFailed(
                     $process->getErrorOutput(),
                     (int) $process->getExitCode()
@@ -570,9 +595,9 @@ class Pdf
 
             return $process->getOutput();
         } finally {
-            foreach ($tempFiles as $file) {
-                if (file_exists($file)) {
-                    @unlink($file);
+            foreach ($tempFiles as $tempFile) {
+                if (file_exists($tempFile)) {
+                    @unlink($tempFile);
                 }
             }
         }
@@ -582,8 +607,8 @@ class Pdf
     {
         $filePath = tempnam($dir, $prefix);
 
-        if ($filePath === false) {
-            $filePath = $dir . DIRECTORY_SEPARATOR . uniqid($prefix, true) . '.html';
+        if ($filePath === FALSE) {
+            $filePath = $dir . DIRECTORY_SEPARATOR . uniqid($prefix, TRUE) . '.html';
         }
 
         file_put_contents($filePath, $content);
