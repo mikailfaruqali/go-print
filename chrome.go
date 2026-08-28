@@ -35,8 +35,11 @@ type ChromeRenderer struct {
 	browserOnce   sync.Once
 	browserErr    error
 
-	server *assetServer
-	quiet  bool
+	server     *assetServer
+	serverOnce sync.Once
+	serverErr  error
+
+	quiet bool
 }
 
 // NewChromeRenderer creates a renderer bound to the given Chrome binary. The
@@ -76,6 +79,20 @@ func NewChromeRenderer(chromePath string, quiet bool) (*ChromeRenderer, error) {
 }
 
 func discard(string, ...interface{}) {}
+
+// Start launches the shared browser. Calling it is optional - the first render
+// starts the browser anyway - but doing it up front keeps startup cost visible
+// and lets it overlap with other setup work.
+func (cr *ChromeRenderer) Start() error { return cr.ensureBrowser() }
+
+// ensureServer starts the local asset server exactly once. Renders can run
+// concurrently, so this must not be a bare nil check.
+func (cr *ChromeRenderer) ensureServer() error {
+	cr.serverOnce.Do(func() {
+		cr.server, cr.serverErr = newAssetServer()
+	})
+	return cr.serverErr
+}
 
 // ensureBrowser starts the shared browser exactly once.
 func (cr *ChromeRenderer) ensureBrowser() error {
@@ -248,12 +265,8 @@ func (cr *ChromeRenderer) RenderHTMLToPDFBytes(htmlContent string, opts RenderOp
 		timeout = 120 * time.Second
 	}
 
-	if cr.server == nil {
-		s, err := newAssetServer()
-		if err != nil {
-			return nil, err
-		}
-		cr.server = s
+	if err := cr.ensureServer(); err != nil {
+		return nil, err
 	}
 	navURL := cr.server.register(htmlContent, opts.BaseDir)
 

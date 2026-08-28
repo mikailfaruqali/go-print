@@ -89,6 +89,7 @@ cat invoice.html | snpdf --content - --output - > invoice.pdf
 | `--title` / `--author` / `--subject` / `--keywords` | `""` | PDF document metadata |
 | `--chrome` | *auto* | Path to the Chrome/Chromium binary |
 | `--timeout` | `120` | Per-render timeout in seconds |
+| `--timings` | `false` | Print how long each pipeline stage took |
 | `--quiet`, `-q` | `false` | Suppress progress output |
 | `--version`, `-v` | | Print version |
 | `--help`, `-h` | | Show help |
@@ -189,3 +190,21 @@ view straight through the process and capture the PDF without touching disk.
 
 A single Chrome process is started for the whole run and each render reuses it as a new
 tab, which is what keeps large documents fast.
+
+### Why it is fast
+
+Four things do the heavy lifting; run with `--timings` to see the breakdown.
+
+- **One browser, many tabs.** Chrome starts once (~270ms) and every render is a tab on it.
+- **One render per band.** A header with `{pageNumber}` is expanded into a single document
+  with one band per page and rendered in one pass, rather than once per page.
+- **One PDF read and one write.** Header, footer, watermark and metadata are all applied
+  to a single in-memory document. Each `pdfcpu` file helper is a full parse-and-rewrite
+  cycle, so doing them as separate steps cost more than the rendering did.
+- **Native multi-stamping.** pdfcpu maps band page N onto document page N directly, so
+  the band never has to be split into per-page files.
+- **Concurrent renders.** Header, footer and watermark are independent, so they render in
+  parallel tabs.
+
+On a 63-page RTL report the remaining time is dominated by Chrome laying out the content
+itself, which is the irreducible part.

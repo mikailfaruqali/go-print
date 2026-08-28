@@ -74,6 +74,7 @@ Metadata:
 Behaviour:
   --chrome <path>         Path to the Chrome/Chromium/Edge executable
   --timeout <seconds>     Per-page render timeout (default: 120)
+  --timings               Print how long each pipeline stage took
   --quiet, -q             Suppress progress output
   --version, -v           Print version and exit
   --help, -h              Show this help
@@ -145,6 +146,7 @@ type config struct {
 	chromePath                       string
 	timeoutSeconds                   int
 	quiet, showHelp, showVersion     bool
+	timings                          bool
 }
 
 func parseFlags(cfg *config) error {
@@ -183,6 +185,7 @@ func parseFlags(cfg *config) error {
 	fs.StringVar(&cfg.keywords, "keywords", "", "")
 	fs.StringVar(&cfg.chromePath, "chrome", "", "")
 	fs.IntVar(&cfg.timeoutSeconds, "timeout", 120, "")
+	fs.BoolVar(&cfg.timings, "timings", false, "")
 	fs.BoolVar(&cfg.quiet, "quiet", false, "")
 	fs.BoolVar(&cfg.quiet, "q", false, "")
 	fs.BoolVar(&cfg.showHelp, "help", false, "")
@@ -328,7 +331,7 @@ func run() error {
 		renderer: renderer,
 		tempDir:  tempDir,
 		baseDir:  baseDir,
-		logf:     logf,
+		rawLogf:  logf,
 	}
 
 	finalPDF, totalPages, err := job.build(contentHTML, headerHTML, footerHTML, watermarkHTML)

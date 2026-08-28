@@ -3,9 +3,11 @@ package main
 import (
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -102,11 +104,38 @@ type job struct {
 	renderer *ChromeRenderer
 	tempDir  string
 	baseDir  string
-	logf     func(string, ...interface{})
+	rawLogf  func(string, ...interface{})
+
+	// Guards stderr, which the concurrent band renders share.
+	mu sync.Mutex
+}
+
+// logf writes one progress line. Bands render concurrently, so every caller
+// must emit a complete line in a single call.
+func (j *job) logf(format string, args ...interface{}) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.rawLogf(format, args...)
 }
 
 func (j *job) timeout() time.Duration {
 	return time.Duration(j.cfg.timeoutSeconds) * time.Second
+}
+
+// step times one stage of the pipeline. With --timings it reports how long each
+// stage took, which is the quickest way to see whether a slow run is Chrome
+// rendering, PDF stamping, or the document itself.
+//
+// Safe to call from the concurrent band renders.
+func (j *job) step(name string, fn func() error) error {
+	start := time.Now()
+	err := fn()
+	if j.cfg.timings {
+		j.mu.Lock()
+		fmt.Fprintf(os.Stderr, "  [timing] %-24s %8.1f ms\n", name, float64(time.Since(start).Microseconds())/1000)
+		j.mu.Unlock()
+	}
+	return err
 }
 
 // build runs the full pipeline and returns the path of the finished PDF.
@@ -125,20 +154,28 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 		contentBottom = math.Max(contentBottom, g.footerOffset+g.footerHeight+g.footerSpacing)
 	}
 
+	// Start Chrome before the first render so --timings attributes browser
+	// startup to its own line instead of hiding it inside the content render.
+	if err := j.step("start chrome", j.renderer.Start); err != nil {
+		return "", 0, err
+	}
+
 	j.logf("Rendering content... ")
 	contentPDF := filepath.Join(j.tempDir, "content.pdf")
-	err := j.renderer.RenderHTMLToPDF(contentHTML, contentPDF, RenderOptions{
-		PaperWidthInches:   g.paperWidth,
-		PaperHeightInches:  g.paperHeight,
-		MarginTopInches:    contentTop,
-		MarginBottomInches: contentBottom,
-		MarginLeftInches:   g.marginLeft,
-		MarginRightInches:  g.marginRight,
-		Landscape:          g.landscape,
-		Scale:              j.cfg.scale,
-		PreferCSSPageSize:  j.cfg.preferCSSPageSize,
-		BaseDir:            j.baseDir,
-		Timeout:            j.timeout(),
+	err := j.step("render content", func() error {
+		return j.renderer.RenderHTMLToPDF(contentHTML, contentPDF, RenderOptions{
+			PaperWidthInches:   g.paperWidth,
+			PaperHeightInches:  g.paperHeight,
+			MarginTopInches:    contentTop,
+			MarginBottomInches: contentBottom,
+			MarginLeftInches:   g.marginLeft,
+			MarginRightInches:  g.marginRight,
+			Landscape:          g.landscape,
+			Scale:              j.cfg.scale,
+			PreferCSSPageSize:  j.cfg.preferCSSPageSize,
+			BaseDir:            j.baseDir,
+			Timeout:            j.timeout(),
+		})
 	})
 	if err != nil {
 		j.logf("failed\n")
@@ -146,73 +183,136 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 	}
 	j.logf("done\n")
 
-	totalPages, err := GetPDFPageCount(contentPDF)
-	if err != nil {
+	// Everything below runs against one in-memory document: load once, stamp
+	// header/footer/watermark, set metadata, write once.
+	var comp *Composer
+	if err := j.step("load pdf", func() error {
+		var e error
+		comp, e = NewComposer(contentPDF)
+		return e
+	}); err != nil {
 		return "", 0, err
 	}
-	current := contentPDF
+	totalPages := comp.PageCount()
+
+	// Header, footer and watermark are independent of each other, so render
+	// them concurrently as separate tabs in the one browser. They are all
+	// produced before any stamping, so a band page-count mismatch fails fast
+	// while the document is still untouched.
+	var (
+		headerBand, footerBand *band
+		wmPDF                  string
+		wg                     sync.WaitGroup
+		mu                     sync.Mutex
+		errs                   []error
+	)
+	fail := func(err error) {
+		mu.Lock()
+		errs = append(errs, err)
+		mu.Unlock()
+	}
 
 	if headerHTML != "" {
-		current, err = j.applyBand(current, headerHTML, totalPages, bandSpec{
-			name:   "header",
-			height: g.headerHeight,
-			// Flush with the top edge of the paper, like wkhtmltopdf, so a
-			// full-bleed header band has no white strip above it. --header-offset
-			// pushes it down for designs that want to sit inside the margin.
-			placement: StampPlacement{Pos: "tc", OffsetY: -InchesToPoints(g.headerOffset)},
-			fallback:  1.0,
-		})
-		if err != nil {
-			return "", 0, err
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			b, err := j.renderBand(headerHTML, totalPages, bandSpec{
+				name:   "header",
+				height: g.headerHeight,
+				// Flush with the top edge of the paper, like wkhtmltopdf, so a
+				// full-bleed header band has no white strip above it.
+				// --header-offset pushes it down for designs that want to sit
+				// inside the margin.
+				placement: StampPlacement{Pos: "tc", OffsetY: -InchesToPoints(g.headerOffset)},
+				fallback:  1.0,
+			})
+			if err != nil {
+				fail(err)
+				return
+			}
+			headerBand = b
+		}()
 	}
 
 	if footerHTML != "" {
-		current, err = j.applyBand(current, footerHTML, totalPages, bandSpec{
-			name:      "footer",
-			height:    g.footerHeight,
-			placement: StampPlacement{Pos: "bc", OffsetY: InchesToPoints(g.footerOffset)},
-			fallback:  0.6,
-		})
-		if err != nil {
-			return "", 0, err
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			b, err := j.renderBand(footerHTML, totalPages, bandSpec{
+				name:      "footer",
+				height:    g.footerHeight,
+				placement: StampPlacement{Pos: "bc", OffsetY: InchesToPoints(g.footerOffset)},
+				fallback:  0.6,
+			})
+			if err != nil {
+				fail(err)
+				return
+			}
+			footerBand = b
+		}()
 	}
 
 	if watermarkHTML != "" {
-		j.logf("Rendering watermark... ")
-		wmPDF := filepath.Join(j.tempDir, "watermark.pdf")
-		err := j.renderer.RenderHTMLToPDF(watermarkHTML, wmPDF, RenderOptions{
-			PaperWidthInches:  g.paperWidth,
-			PaperHeightInches: g.paperHeight,
-			Landscape:         g.landscape,
-			Scale:             1.0,
-			BaseDir:           j.baseDir,
-			Timeout:           j.timeout(),
-		})
-		if err != nil {
-			j.logf("failed\n")
-			return "", 0, fmt.Errorf("failed to render watermark: %w", err)
-		}
-		j.logf("done\n")
+		wmPDF = filepath.Join(j.tempDir, "watermark.pdf")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := j.step("render watermark", func() error {
+				return j.renderer.RenderHTMLToPDF(watermarkHTML, wmPDF, RenderOptions{
+					PaperWidthInches:  g.paperWidth,
+					PaperHeightInches: g.paperHeight,
+					Landscape:         g.landscape,
+					Scale:             1.0,
+					BaseDir:           j.baseDir,
+					Timeout:           j.timeout(),
+				})
+			}); err != nil {
+				fail(fmt.Errorf("failed to render watermark: %w", err))
+			}
+		}()
+	}
 
-		out := filepath.Join(j.tempDir, "with-watermark.pdf")
-		onTop := !j.cfg.watermarkBehind
-		if err := AddWatermarkPDF(current, wmPDF, out, j.cfg.watermarkOpacity, onTop); err != nil {
+	wg.Wait()
+	if len(errs) > 0 {
+		return "", 0, errs[0]
+	}
+
+	for _, b := range []*band{headerBand, footerBand} {
+		if b == nil {
+			continue
+		}
+		if err := j.step("stamp "+b.spec.name, func() error {
+			return comp.StampBand(b.path, b.spec.placement, b.multi)
+		}); err != nil {
 			return "", 0, err
 		}
-		current = out
+	}
+
+	if wmPDF != "" {
+		onTop := !j.cfg.watermarkBehind
+		if err := j.step("stamp watermark", func() error {
+			return comp.Watermark(wmPDF, j.cfg.watermarkOpacity, onTop)
+		}); err != nil {
+			return "", 0, err
+		}
 	}
 
 	if meta := j.metadata(); len(meta) > 0 {
-		out := filepath.Join(j.tempDir, "with-metadata.pdf")
-		if err := SetPDFMetadata(current, out, meta); err != nil {
+		if err := j.step("write metadata", func() error {
+			return comp.SetMetadata(meta)
+		}); err != nil {
 			return "", 0, err
 		}
-		current = out
 	}
 
-	return current, totalPages, nil
+	out := filepath.Join(j.tempDir, "final.pdf")
+	if err := j.step("write pdf", func() error {
+		return comp.WriteFile(out)
+	}); err != nil {
+		return "", 0, err
+	}
+
+	return out, totalPages, nil
 }
 
 func (j *job) metadata() map[string]string {
@@ -295,14 +395,20 @@ type bandSpec struct {
 	fallback  float64
 }
 
-// applyBand renders a header or footer and stamps it onto every page.
+// band is a rendered header or footer ready to be stamped.
+type band struct {
+	spec  bandSpec
+	path  string
+	multi bool // true when path holds one page per document page
+}
+
+// renderBand renders a header or footer to a PDF in exactly one Chrome call.
 //
-// Both the static and per-page cases cost exactly one Chrome render. A template
-// with page numbers is expanded into a single document holding one band per
-// page, separated by forced page breaks; Chrome paginates it in one pass and
-// the result is split back into per-page stamps. Rendering each page
-// separately is orders of magnitude slower for long documents.
-func (j *job) applyBand(inPDF, templateHTML string, totalPages int, spec bandSpec) (string, error) {
+// A static template becomes a single page reused everywhere. A template with
+// page numbers is expanded into one document holding one band per page,
+// separated by forced page breaks, which Chrome paginates in a single pass.
+// Rendering page by page is orders of magnitude slower on long documents.
+func (j *job) renderBand(templateHTML string, totalPages int, spec bandSpec) (*band, error) {
 	height := spec.height
 	if height <= 0 {
 		height = spec.fallback
@@ -317,48 +423,37 @@ func (j *job) applyBand(inPDF, templateHTML string, totalPages int, spec bandSpe
 		Timeout:           j.timeout(),
 	}
 
-	stamps := make(map[int]string, totalPages)
+	multi := hasPagePlaceholder(templateHTML)
+	html := templateHTML
+	note := fmt.Sprintf("1 render, reused on %d pages", totalPages)
+	if multi {
+		note = fmt.Sprintf("1 render for %d pages", totalPages)
+		html = buildPagedBandHTML(templateHTML, totalPages, height, j.cfg.pageOffset, j.cfg.totalOffset)
+	}
 
-	if !hasPagePlaceholder(templateHTML) {
-		j.logf("Rendering %s (1 render, reused on %d pages)... ", spec.name, totalPages)
-		path := filepath.Join(j.tempDir, spec.name+".pdf")
-		if err := j.renderer.RenderHTMLToPDF(templateHTML, path, renderOpts); err != nil {
-			j.logf("failed\n")
-			return "", fmt.Errorf("failed to render %s: %w", spec.name, err)
-		}
-		for p := 1; p <= totalPages; p++ {
-			stamps[p] = path
-		}
-		j.logf("done\n")
-	} else {
-		j.logf("Rendering %s (1 render for %d pages)... ", spec.name, totalPages)
-		combined := buildPagedBandHTML(templateHTML, totalPages, height, j.cfg.pageOffset, j.cfg.totalOffset)
-		multiPath := filepath.Join(j.tempDir, spec.name+"-all.pdf")
-		if err := j.renderer.RenderHTMLToPDF(combined, multiPath, renderOpts); err != nil {
-			j.logf("failed\n")
-			return "", fmt.Errorf("failed to render %s: %w", spec.name, err)
-		}
+	path := filepath.Join(j.tempDir, spec.name+".pdf")
+	if err := j.step("render "+spec.name, func() error {
+		return j.renderer.RenderHTMLToPDF(html, path, renderOpts)
+	}); err != nil {
+		// Bands render concurrently, so each logs one complete line rather
+		// than a prefix that another goroutine could interleave with.
+		j.logf("Rendering %s... failed\n", spec.name)
+		return nil, fmt.Errorf("failed to render %s: %w", spec.name, err)
+	}
 
-		got, err := GetPDFPageCount(multiPath)
+	if multi {
+		got, err := GetPDFPageCount(path)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if got != totalPages {
-			// Content taller than the band can push a block onto an extra page.
-			return "", fmt.Errorf("%s produced %d pages for a %d page document; reduce the %s content or increase --%s-height",
+			// Content taller than the band can push a block onto an extra page,
+			// which would misalign every page number after it.
+			return nil, fmt.Errorf("%s produced %d pages for a %d page document; reduce the %s content or increase --%s-height",
 				spec.name, got, totalPages, spec.name, spec.name)
 		}
-
-		stamps, err = SplitPDFPages(multiPath, j.tempDir, spec.name, totalPages)
-		if err != nil {
-			return "", err
-		}
-		j.logf("done\n")
 	}
+	j.logf("Rendering %s (%s)... done\n", spec.name, note)
 
-	out := filepath.Join(j.tempDir, "with-"+spec.name+".pdf")
-	if err := MultiStampPages(inPDF, stamps, out, spec.placement); err != nil {
-		return "", err
-	}
-	return out, nil
+	return &band{spec: spec, path: path, multi: multi}, nil
 }

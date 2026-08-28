@@ -141,6 +141,18 @@ func TestPageAndTotalOffsets(t *testing.T) {
 	}
 }
 
+// A band is multi-stamped only when it varies per page; a static band is one
+// page reused everywhere. Getting this backwards either misaligns every page
+// number or silently repeats page 1's header.
+func TestBandMultiFlagMatchesPlaceholders(t *testing.T) {
+	if !hasPagePlaceholder(`<div>Page {pageNumber}</div>`) {
+		t.Error("a numbered band must be multi-stamped")
+	}
+	if hasPagePlaceholder(`<div>ACME Corp</div>`) {
+		t.Error("a static band must not be multi-stamped")
+	}
+}
+
 // Bands sit flush with the paper edge, so content clears whichever is deeper -
 // the margin or the band - rather than the sum of both.
 func TestContentInsetUsesMaxNotSum(t *testing.T) {
