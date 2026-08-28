@@ -20,7 +20,7 @@ class PdfException extends RuntimeException
         return new self("pdf binary not found or not executable at: {$binaryPath}. Run 'php artisan pdf:install' to install it.");
     }
 
-    public static function chromeNotFound(?string $chromePath = null): self
+    public static function chromeNotFound(?string $chromePath = NULL): self
     {
         $location = $chromePath ? "at specified path: {$chromePath}" : 'in standard system paths';
 

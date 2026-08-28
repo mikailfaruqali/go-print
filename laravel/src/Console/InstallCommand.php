@@ -8,8 +8,18 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
+
 use Throwable;
 use ZipArchive;
+
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\error;
+use function Laravel\Prompts\info;
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\note;
+use function Laravel\Prompts\outro;
+use function Laravel\Prompts\spin;
+use function Laravel\Prompts\warning;
 
 class InstallCommand extends Command
 {
@@ -21,13 +31,12 @@ class InstallCommand extends Command
 
     public function handle(): int
     {
-        $this->info('Detecting system environment...');
+        intro('Installing snpdf Binary');
 
         $os = $this->detectOs();
         $arch = $this->detectArch();
 
-        $this->line(" - Operating System: <comment>{$os}</comment>");
-        $this->line(" - Architecture:     <comment>{$arch}</comment>");
+        note("Environment detected: {$os} ({$arch})");
 
         $isWindows = $os === 'windows';
         $binaryFileName = $isWindows ? 'snpdf.exe' : 'snpdf';
@@ -37,10 +46,16 @@ class InstallCommand extends Command
         $targetBinaryPath = $destinationDirectory . DIRECTORY_SEPARATOR . $binaryFileName;
 
         if (File::exists($targetBinaryPath) && ! $this->option('force')) {
-            $this->warn("Binary already exists at: {$targetBinaryPath}");
+            warning("Binary already exists at: {$targetBinaryPath}");
 
-            if (! $this->confirm('Do you want to re-download and overwrite it?', FALSE)) {
+            $overwrite = confirm(
+                label: 'Do you want to re-download and overwrite it?',
+                default: FALSE,
+            );
+
+            if (! $overwrite) {
                 $this->verifyBinary($targetBinaryPath);
+                outro('snpdf installation skipped.');
 
                 return self::SUCCESS;
             }
@@ -51,49 +66,60 @@ class InstallCommand extends Command
         }
 
         $tag = (string) $this->option('tag');
-        $this->info("Fetching release information ({$tag})...");
 
-        $downloadUrl = $this->resolveDownloadUrl($os, $arch, $archiveExtension, $tag);
+        $downloadUrl = spin(
+            fn (): ?string => $this->resolveDownloadUrl($os, $arch, $archiveExtension, $tag),
+            "Fetching release information ({$tag})..."
+        );
 
         if (! $downloadUrl) {
-            $this->error("Unable to resolve release asset download URL for {$os}-{$arch}.");
-            $this->line("You can manually place the binary in: <comment>{$targetBinaryPath}</comment>");
+            error("Unable to resolve release asset download URL for {$os}-{$arch}.");
+            note("You can manually place the binary in: {$targetBinaryPath}");
 
             return self::FAILURE;
         }
 
-        $this->info("Downloading from: {$downloadUrl}");
         $tempArchive = tempnam(sys_get_temp_dir(), 'snpdf_download_') . $archiveExtension;
 
         try {
-            $response = Http::timeout(60)
-                ->withHeaders(['User-Agent' => 'Snawbar-SNPDF-Laravel-Installer'])
-                ->sink($tempArchive)
-                ->get($downloadUrl);
+            $downloaded = spin(
+                function () use ($downloadUrl, $tempArchive) {
+                    $response = Http::timeout(60)
+                        ->withHeaders(['User-Agent' => 'Snawbar-SNPDF-Laravel-Installer'])
+                        ->sink($tempArchive)
+                        ->get($downloadUrl);
 
-            if (! $response->successful()) {
-                $this->error("Failed to download binary asset (HTTP {$response->status()}).");
+                    return $response->successful();
+                },
+                'Downloading snpdf binary...'
+            );
+
+            if (! $downloaded) {
+                error('Failed to download binary asset from GitHub release.');
 
                 return self::FAILURE;
             }
 
-            $this->info('Extracting binary archive...');
-            $this->extractBinary($tempArchive, $destinationDirectory, $isWindows, $binaryFileName);
+            spin(
+                function () use ($tempArchive, $destinationDirectory, $isWindows, $binaryFileName, $targetBinaryPath): void {
+                    $this->extractBinary($tempArchive, $destinationDirectory, $isWindows, $binaryFileName);
 
-            if (! $isWindows && File::exists($targetBinaryPath)) {
-                chmod($targetBinaryPath, 0755);
-            }
+                    if (! $isWindows && File::exists($targetBinaryPath)) {
+                        chmod($targetBinaryPath, 0755);
+                    }
+                },
+                'Extracting binary archive...'
+            );
 
-            $this->info("Binary successfully placed at: <comment>{$targetBinaryPath}</comment>");
+            info("Binary successfully placed at: {$targetBinaryPath}");
 
             $this->verifyBinary($targetBinaryPath);
 
-            $this->newLine();
-            $this->info('snpdf installation completed successfully!');
+            outro('snpdf installation completed successfully!');
 
             return self::SUCCESS;
         } catch (Throwable $throwable) {
-            $this->error("Installation error: {$throwable->getMessage()}");
+            error("Installation error: {$throwable->getMessage()}");
 
             return self::FAILURE;
         } finally {
@@ -177,16 +203,14 @@ class InstallCommand extends Command
 
     private function verifyBinary(string $binaryPath): void
     {
-        $this->info('Verifying snpdf executable...');
-
         $process = new Process([$binaryPath, '--version']);
         $process->run();
 
         if ($process->isSuccessful()) {
             $versionOutput = trim($process->getOutput());
-            $this->line(" - snpdf version: <info>{$versionOutput}</info>");
+            note("snpdf version: {$versionOutput}");
         } else {
-            $this->warn("Could not execute '{$binaryPath} --version': " . trim($process->getErrorOutput()));
+            warning("Could not execute '{$binaryPath} --version': " . trim($process->getErrorOutput()));
         }
     }
 }

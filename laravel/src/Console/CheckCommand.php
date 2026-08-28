@@ -8,7 +8,14 @@ use Illuminate\Console\Command;
 use PDF\Pdf;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+
 use Throwable;
+
+use function Laravel\Prompts\error;
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\note;
+use function Laravel\Prompts\outro;
+use function Laravel\Prompts\table;
 
 class CheckCommand extends Command
 {
@@ -18,41 +25,48 @@ class CheckCommand extends Command
 
     public function handle(): int
     {
-        $this->info('Checking snpdf requirements and environment...');
-        $this->newLine();
+        intro('Checking snpdf Requirements & Environment');
 
-        $binaryOk = $this->checkPdfBinary();
-        $this->newLine();
+        $binaryResult = $this->checkPdfBinary();
+        $chromeResult = $this->checkChromeInstallation();
 
-        $chromeOk = $this->checkChromeInstallation();
-        $this->newLine();
+        table(
+            headers: ['Component', 'Status', 'Details'],
+            rows: [
+                ['snpdf Binary', $binaryResult['ok'] ? '✓ OK' : '✗ Failed', $binaryResult['details']],
+                ['Chrome / Chromium', $chromeResult['ok'] ? '✓ OK' : '✗ Failed', $chromeResult['details']],
+            ]
+        );
 
-        if ($binaryOk && $chromeOk) {
-            $this->info('✓ All systems operational! snpdf is ready to generate PDFs.');
+        if ($binaryResult['ok'] && $chromeResult['ok']) {
+            outro('✓ All systems operational! snpdf is ready to generate PDFs.');
 
             return self::SUCCESS;
         }
 
-        $this->error('✗ One or more checks failed. Please review the errors above.');
+        error('✗ One or more checks failed. Please review the table above.');
+        if (! $binaryResult['ok']) {
+            note('Run php artisan snpdf:install to install the binary automatically.');
+        }
 
         return self::FAILURE;
     }
 
-    private function checkPdfBinary(): bool
+    /**
+     * @return array{ok: bool, details: string}
+     */
+    private function checkPdfBinary(): array
     {
-        $this->line('<comment>1. Checking snpdf Binary:</comment>');
-
         try {
             /** @var Pdf $builder */
             $builder = resolve('pdf');
             $binaryPath = $builder->resolveBinaryPath();
 
-            $this->line("   - Binary located at: <info>{$binaryPath}</info>");
-
             if (! is_executable($binaryPath) && PHP_OS_FAMILY !== 'Windows') {
-                $this->error("   - File exists but is not executable. Run 'chmod +x {$binaryPath}'.");
-
-                return FALSE;
+                return [
+                    'ok' => FALSE,
+                    'details' => "Found at {$binaryPath} but not executable (run chmod +x).",
+                ];
             }
 
             $process = new Process([$binaryPath, '--version']);
@@ -60,65 +74,64 @@ class CheckCommand extends Command
 
             if ($process->isSuccessful()) {
                 $version = trim($process->getOutput());
-                $this->line("   - Binary version:    <info>{$version}</info>");
-                $this->info('   ✓ snpdf binary is working properly.');
 
-                return TRUE;
+                return [
+                    'ok' => TRUE,
+                    'details' => "{$binaryPath} ({$version})",
+                ];
             }
 
-            $this->error('   ✗ Failed executing snpdf binary: ' . trim($process->getErrorOutput()));
-
-            return FALSE;
+            return [
+                'ok' => FALSE,
+                'details' => 'Execution failed: ' . trim($process->getErrorOutput()),
+            ];
         } catch (Throwable $throwable) {
-            $this->error("   ✗ {$throwable->getMessage()}");
-            $this->line("     Run <comment>php artisan snpdf:install</comment> to install it automatically.");
-
-            return FALSE;
+            return [
+                'ok' => FALSE,
+                'details' => $throwable->getMessage(),
+            ];
         }
     }
 
-    private function checkChromeInstallation(): bool
+    /**
+     * @return array{ok: bool, details: string}
+     */
+    private function checkChromeInstallation(): array
     {
-        $this->line('<comment>2. Checking Chrome / Chromium Engine:</comment>');
-
         $chromePath = config('pdf.chrome_path');
 
         if ($chromePath && file_exists($chromePath)) {
-            $this->line("   - Using configured Chrome path: <info>{$chromePath}</info>");
+            $version = $this->getBrowserVersion($chromePath);
 
-            return $this->testBrowserExecutable($chromePath);
+            return [
+                'ok' => TRUE,
+                'details' => "Configured: {$chromePath}" . ($version ? " ({$version})" : ''),
+            ];
         }
 
         $discoveredPath = $this->detectChromeExecutable();
 
         if ($discoveredPath) {
-            $this->line("   - Auto-detected browser executable: <info>{$discoveredPath}</info>");
+            $version = $this->getBrowserVersion($discoveredPath);
 
-            return $this->testBrowserExecutable($discoveredPath);
+            return [
+                'ok' => TRUE,
+                'details' => "Detected: {$discoveredPath}" . ($version ? " ({$version})" : ''),
+            ];
         }
 
-        $this->error('   ✗ No Chrome, Chromium, Brave, or Edge executable found in standard locations.');
-        $this->line('     Please install Google Chrome / Chromium or configure PDF_CHROME_PATH in your .env file.');
-
-        return FALSE;
+        return [
+            'ok' => FALSE,
+            'details' => 'No Chrome, Chromium, Brave, or Edge executable found.',
+        ];
     }
 
-    private function testBrowserExecutable(string $path): bool
+    private function getBrowserVersion(string $path): ?string
     {
         $process = new Process([$path, '--version']);
         $process->run();
 
-        if ($process->isSuccessful()) {
-            $version = trim($process->getOutput());
-            $this->line("   - Browser version:   <info>{$version}</info>");
-            $this->info('   ✓ Chrome/Chromium is installed and accessible.');
-
-            return TRUE;
-        }
-
-        $this->warn("   - Found executable at {$path} but could not get version: " . trim($process->getErrorOutput()));
-
-        return TRUE;
+        return $process->isSuccessful() ? trim($process->getOutput()) : NULL;
     }
 
     private function detectChromeExecutable(): ?string
