@@ -4,22 +4,44 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto"
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/emulation"
+	cdpio "github.com/chromedp/cdproto/io"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
-// ChromeRenderer wraps chromedp operations with a persistent or reusable browser instance
+// ChromeRenderer owns a single long-lived headless browser. Every render reuses
+// that browser via a fresh tab, which is what keeps large documents fast: the
+// old behaviour launched a whole Chrome process per page.
 type ChromeRenderer struct {
 	chromePath  string
 	allocCtx    context.Context
 	allocCancel context.CancelFunc
+
+	browserCtx    context.Context
+	browserCancel context.CancelFunc
+	browserOnce   sync.Once
+	browserErr    error
+
+	server *assetServer
+	quiet  bool
 }
 
-// NewChromeRenderer creates an initialized ChromeRenderer
-func NewChromeRenderer(chromePath string) (*ChromeRenderer, error) {
+// NewChromeRenderer creates a renderer bound to the given Chrome binary. The
+// browser itself is started lazily on the first render.
+func NewChromeRenderer(chromePath string, quiet bool) (*ChromeRenderer, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(chromePath),
 		chromedp.NoSandbox,
@@ -36,25 +58,56 @@ func NewChromeRenderer(chromePath string) (*ChromeRenderer, error) {
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("safebrowsing-disable-auto-update", true),
 		chromedp.Flag("font-render-hinting", "none"),
+		// Keep background tabs rendering at full speed; without these Chrome
+		// throttles the tabs we print from and pages come out half-painted.
+		chromedp.Flag("disable-background-timer-throttling", true),
+		chromedp.Flag("disable-backgrounding-occluded-windows", true),
+		chromedp.Flag("disable-renderer-backgrounding", true),
+		chromedp.Flag("run-all-compositor-stages-before-draw", true),
 	)
 
-	// Suppress verbose unhandled CDP event logs by using chromedp.WithLogf(func(string, ...interface{}) {})
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	return &ChromeRenderer{
 		chromePath:  chromePath,
 		allocCtx:    allocCtx,
 		allocCancel: allocCancel,
+		quiet:       quiet,
 	}, nil
 }
 
-// Close shuts down the browser instance
+func discard(string, ...interface{}) {}
+
+// ensureBrowser starts the shared browser exactly once.
+func (cr *ChromeRenderer) ensureBrowser() error {
+	cr.browserOnce.Do(func() {
+		ctx, cancel := chromedp.NewContext(cr.allocCtx, chromedp.WithLogf(discard), chromedp.WithErrorf(discard))
+		// chromedp starts the browser lazily too, so force it up now and let a
+		// failure here surface as a clear error instead of a timeout later.
+		if err := chromedp.Run(ctx); err != nil {
+			cancel()
+			cr.browserErr = fmt.Errorf("failed to start Chrome at %s: %w", cr.chromePath, err)
+			return
+		}
+		cr.browserCtx = ctx
+		cr.browserCancel = cancel
+	})
+	return cr.browserErr
+}
+
+// Close shuts down the browser and the asset server.
 func (cr *ChromeRenderer) Close() {
+	if cr.browserCancel != nil {
+		cr.browserCancel()
+	}
 	if cr.allocCancel != nil {
 		cr.allocCancel()
 	}
+	if cr.server != nil {
+		cr.server.Close()
+	}
 }
 
-// RenderOptions configures print settings for HTML rendering
+// RenderOptions configures print settings for one HTML render.
 type RenderOptions struct {
 	PaperWidthInches   float64
 	PaperHeightInches  float64
@@ -63,57 +116,272 @@ type RenderOptions struct {
 	MarginLeftInches   float64
 	MarginRightInches  float64
 	Landscape          bool
+	Scale              float64
+	PreferCSSPageSize  bool
 	Timeout            time.Duration
+	// BaseDir is the directory relative URLs in the HTML resolve against.
+	BaseDir string
+}
+
+// assetServer serves the document's base directory over loopback HTTP so that
+// relative <img>, <link> and @font-face URLs resolve. A data: URI has no base,
+// which silently dropped every relative asset.
+type assetServer struct {
+	listener net.Listener
+	srv      *http.Server
+	origin   string
+
+	mu    sync.Mutex
+	roots map[string]string // token -> directory
+	pages map[string]string // token/path -> html body
+	seq   int
+}
+
+func newAssetServer() (*assetServer, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("failed to start local asset server: %w", err)
+	}
+	as := &assetServer{
+		listener: ln,
+		roots:    map[string]string{},
+		pages:    map[string]string{},
+		origin:   "http://" + ln.Addr().String(),
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", as.handle)
+	as.srv = &http.Server{Handler: mux}
+	go as.srv.Serve(ln)
+	return as, nil
+}
+
+func (as *assetServer) Close() {
+	if as.srv != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		as.srv.Shutdown(ctx)
+	}
+}
+
+// register stores an HTML document plus its base directory and returns the URL
+// Chrome should navigate to.
+func (as *assetServer) register(html string, baseDir string) string {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	as.seq++
+	token := fmt.Sprintf("d%d", as.seq)
+	as.roots[token] = baseDir
+	as.pages[token] = html
+	return fmt.Sprintf("%s/%s/", as.origin, token)
+}
+
+func (as *assetServer) handle(w http.ResponseWriter, r *http.Request) {
+	// URL shape: /<token>/            -> the HTML document
+	//            /<token>/some/asset  -> file relative to that document's dir
+	trimmed := strings.TrimPrefix(r.URL.Path, "/")
+	token, rest, _ := strings.Cut(trimmed, "/")
+
+	as.mu.Lock()
+	root, okRoot := as.roots[token]
+	html, okPage := as.pages[token]
+	as.mu.Unlock()
+
+	if !okRoot {
+		http.NotFound(w, r)
+		return
+	}
+
+	if rest == "" {
+		if !okPage {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		io.WriteString(w, html)
+		return
+	}
+
+	if root == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// Resolve and confine the request to the base directory.
+	clean := filepath.Clean(filepath.FromSlash(rest))
+	if filepath.IsAbs(clean) || strings.HasPrefix(clean, "..") {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	full := filepath.Join(root, clean)
+	absRoot, err1 := filepath.Abs(root)
+	absFull, err2 := filepath.Abs(full)
+	if err1 != nil || err2 != nil || !strings.HasPrefix(absFull, absRoot) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "no-store")
+	http.ServeFile(w, r, absFull)
 }
 
 // RenderHTMLToPDF renders an HTML string to a PDF file at outputPath.
 func (cr *ChromeRenderer) RenderHTMLToPDF(htmlContent string, outputPath string, opts RenderOptions) error {
-	timeout := opts.Timeout
-	if timeout <= 0 {
-		timeout = 60 * time.Second
-	}
-
-	// Quiet chromedp logging for cleanly formatted CLI output
-	ctx, cancel := chromedp.NewContext(cr.allocCtx, chromedp.WithLogf(func(string, ...interface{}) {}))
-	defer cancel()
-
-	ctx, cancel = context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// Robust base64 data URI encoding to prevent corrupting SVG, base64 images, or utf-8 characters
-	encodedHTML := base64.StdEncoding.EncodeToString([]byte(htmlContent))
-	dataURI := "data:text/html;charset=utf-8;base64," + encodedHTML
-
-	var pdfBuf []byte
-	printParams := page.PrintToPDF().
-		WithPrintBackground(true).
-		WithPreferCSSPageSize(false).
-		WithPaperWidth(opts.PaperWidthInches).
-		WithPaperHeight(opts.PaperHeightInches).
-		WithMarginTop(opts.MarginTopInches).
-		WithMarginBottom(opts.MarginBottomInches).
-		WithMarginLeft(opts.MarginLeftInches).
-		WithMarginRight(opts.MarginRightInches).
-		WithLandscape(opts.Landscape).
-		WithDisplayHeaderFooter(false) // critical: never use CDP native header/footer
-
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(dataURI),
-		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Sleep(100*time.Millisecond), // ensure styles/fonts/images are painted
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			var err error
-			pdfBuf, _, err = printParams.Do(ctx)
-			return err
-		}),
-	)
+	pdfBuf, err := cr.RenderHTMLToPDFBytes(htmlContent, opts)
 	if err != nil {
-		return fmt.Errorf("chromedp render error: %w", err)
+		return err
 	}
-
 	if err := os.WriteFile(outputPath, pdfBuf, 0644); err != nil {
 		return fmt.Errorf("failed to write rendered PDF to %s: %w", outputPath, err)
 	}
-
 	return nil
+}
+
+// RenderHTMLToPDFBytes renders an HTML string and returns the PDF bytes.
+func (cr *ChromeRenderer) RenderHTMLToPDFBytes(htmlContent string, opts RenderOptions) ([]byte, error) {
+	if err := cr.ensureBrowser(); err != nil {
+		return nil, err
+	}
+
+	timeout := opts.Timeout
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+
+	if cr.server == nil {
+		s, err := newAssetServer()
+		if err != nil {
+			return nil, err
+		}
+		cr.server = s
+	}
+	navURL := cr.server.register(htmlContent, opts.BaseDir)
+
+	// A new tab on the existing browser, not a new browser process. Logger
+	// options belong to the browser context and cannot be repeated here.
+	ctx, cancel := chromedp.NewContext(cr.browserCtx)
+	defer cancel()
+
+	ctx, cancelTimeout := context.WithTimeout(ctx, timeout)
+	defer cancelTimeout()
+
+	scale := opts.Scale
+	if scale <= 0 {
+		scale = 1.0
+	}
+
+	var pdfBuf []byte
+	err := chromedp.Run(ctx,
+		// Emulate the print media type so @media print rules apply, matching
+		// what users expect from wkhtmltopdf.
+		emulation.SetEmulatedMedia().WithMedia("print"),
+		chromedp.Navigate(navURL),
+		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return waitForAssets(ctx)
+		}),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			params := page.PrintToPDF().
+				WithPrintBackground(true).
+				WithPreferCSSPageSize(opts.PreferCSSPageSize).
+				WithPaperWidth(opts.PaperWidthInches).
+				WithPaperHeight(opts.PaperHeightInches).
+				WithMarginTop(opts.MarginTopInches).
+				WithMarginBottom(opts.MarginBottomInches).
+				WithMarginLeft(opts.MarginLeftInches).
+				WithMarginRight(opts.MarginRightInches).
+				WithLandscape(opts.Landscape).
+				WithScale(scale).
+				WithDisplayHeaderFooter(false). // never use CDP native header/footer
+				// Large documents exceed the CDP message size limit and come
+				// back as an empty buffer; streaming avoids that entirely.
+				WithTransferMode(page.PrintToPDFTransferModeReturnAsStream)
+
+			data, stream, err := params.Do(ctx)
+			if err != nil {
+				return err
+			}
+			if stream == "" {
+				pdfBuf = data
+				return nil
+			}
+			defer cdpio.Close(stream).Do(ctx)
+
+			out, err := readStream(ctx, stream)
+			if err != nil {
+				return err
+			}
+			pdfBuf = out
+			return nil
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("chromedp render error: %w", err)
+	}
+	if len(pdfBuf) == 0 {
+		return nil, fmt.Errorf("chrome produced an empty PDF")
+	}
+
+	return pdfBuf, nil
+}
+
+// readStream drains a CDP IO stream. The generated ReadParams.Do drops the
+// base64Encoded flag, and PDF chunks are always base64, so decode explicitly.
+func readStream(ctx context.Context, handle cdpio.StreamHandle) ([]byte, error) {
+	var out []byte
+	for {
+		var res cdpio.ReadReturns
+		params := cdpio.Read(handle).WithSize(1 << 20)
+		if err := cdp.Execute(ctx, cdproto.CommandIORead, params, &res); err != nil {
+			return nil, fmt.Errorf("failed to read PDF stream: %w", err)
+		}
+		if res.Base64encoded {
+			decoded, err := base64.StdEncoding.DecodeString(res.Data)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode PDF stream chunk: %w", err)
+			}
+			out = append(out, decoded...)
+		} else {
+			out = append(out, res.Data...)
+		}
+		if res.EOF {
+			return out, nil
+		}
+	}
+}
+
+// waitForAssets blocks until webfonts are loaded and every image has either
+// decoded or failed. The previous fixed 100ms sleep raced with both.
+func waitForAssets(ctx context.Context) error {
+	const script = `
+new Promise((resolve) => {
+  const done = () => {
+    const imgs = Array.from(document.images || []);
+    const pending = imgs.filter((i) => !i.complete);
+    if (pending.length === 0) { resolve(true); return; }
+    let left = pending.length;
+    const tick = () => { if (--left <= 0) resolve(true); };
+    pending.forEach((i) => {
+      i.addEventListener('load', tick, { once: true });
+      i.addEventListener('error', tick, { once: true });
+    });
+  };
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(done).catch(done);
+  } else {
+    done();
+  }
+})`
+	var ok bool
+	// Bound the asset wait so one broken remote URL cannot hang the render.
+	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if err := chromedp.Evaluate(script, &ok, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	}).Do(waitCtx); err != nil {
+		// A timeout or eval failure is not fatal; print what we have.
+		return nil
+	}
+	// Give the compositor one frame to paint the now-loaded assets.
+	return chromedp.Sleep(60 * time.Millisecond).Do(ctx)
 }

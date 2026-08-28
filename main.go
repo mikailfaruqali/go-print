@@ -1,350 +1,365 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
-func printUsage() {
-	usage := `snpdf - HTML to PDF converter using headless Chrome and pdfcpu
+// Version is stamped at build time with -ldflags "-X main.Version=v1.2.3".
+var Version = "dev"
+
+const usageText = `snpdf ` + `- HTML to PDF converter using headless Chrome
 
 Usage:
   snpdf --content content.html --output invoice.pdf [options]
+  cat page.html | snpdf --content - --output - > out.pdf
 
-Flags:
-  --content          Path to content HTML file (required)
-  --output           Path to output PDF file (required)
-  --header           Path to header HTML file (optional)
-  --footer           Path to footer HTML file (optional)
-  --watermark        Path to watermark HTML file (optional)
-  --paper            Paper size: A4, A3, A5, Letter, Legal (default: A4)
-  --orientation      Orientation: portrait, landscape (default: portrait)
-  --margin-top       Top margin (e.g. 25mm, 1in, 10pt) (default: 0)
-  --margin-bottom    Bottom margin (e.g. 25mm, 1in, 10pt) (default: 0)
-  --margin-left      Left margin (e.g. 10mm, 0.5in) (default: 0)
-  --margin-right     Right margin (e.g. 10mm, 0.5in) (default: 0)
-  --header-height    Header height (e.g. 25mm) (default: 0)
-  --footer-height    Footer height (e.g. 15mm) (default: 0)
-  --watermark-opacity Watermark opacity between 0.0 and 1.0 (default: 0.3)
-  --chrome           Path to Chrome/Chromium executable (optional)
-  --help, -h         Show help
+Input / output:
+  --content <path>        Content HTML file, or "-" for stdin (required)
+  --output <path>         Output PDF file, or "-" for stdout (required)
+  --header <path>         Header HTML file, repeated on every page
+  --footer <path>         Footer HTML file, repeated on every page
+  --watermark <path>      Watermark HTML file, stamped on every page
+  --base-url <dir>        Directory that relative asset URLs resolve against
+                          (default: the content file's own directory)
+
+Page setup:
+  --paper <size>          A0-A6, B4, B5, Letter, Legal, Tabloid, Ledger,
+                          Executive, Statement, or WIDTHxHEIGHT (default: A4)
+  --orientation <mode>    portrait | landscape (default: portrait)
+  --margin <dim>          Set all four margins at once
+  --margin-top <dim>      Top margin    (default: 0)
+  --margin-bottom <dim>   Bottom margin (default: 0)
+  --margin-left <dim>     Left margin   (default: 0)
+  --margin-right <dim>    Right margin  (default: 0)
+  --header-height <dim>   Height reserved for the header (default: 0)
+  --footer-height <dim>   Height reserved for the footer (default: 0)
+  --header-spacing <dim>  Gap between header and content (default: 0)
+  --footer-spacing <dim>  Gap between content and footer (default: 0)
+  --scale <n>             Render scale, 0.1 - 2.0 (default: 1.0)
+  --prefer-css-page-size  Honour @page size in CSS instead of --paper
+
+  Dimensions accept mm, cm, in, pt, px, or a bare number (millimetres):
+  25mm, 1in, 2.5cm, 18pt, 96px, 25
+
+Watermark:
+  --watermark-opacity <n> Opacity 0.0 - 1.0 (default: 0.3)
+  --watermark-behind      Draw the watermark under the content instead of over
+
+Page numbering (usable in header/footer HTML):
+  {page} / {pageNumber}   Current page number
+  {pages} / {totalPages}  Total page count
+  {page+N} / {page-N}     Offset current page, e.g. {page+1}
+  --page-offset <n>       Add n to every rendered page number (default: 0)
+  --total-offset <n>      Add n to the reported total page count (default: 0)
+
+Metadata:
+  --title <text>          PDF document title
+  --author <text>         PDF document author
+  --subject <text>        PDF document subject
+  --keywords <text>       PDF document keywords
+
+Behaviour:
+  --chrome <path>         Path to the Chrome/Chromium/Edge executable
+  --timeout <seconds>     Per-page render timeout (default: 120)
+  --quiet, -q             Suppress progress output
+  --version, -v           Print version and exit
+  --help, -h              Show this help
 `
-	fmt.Print(usage)
-}
+
+func printUsage() { fmt.Fprint(os.Stderr, usageText) }
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "snpdf: %v\n", err)
 		os.Exit(1)
 	}
-	os.Exit(0)
 }
 
-func replacePagePlaceholders(template string, pageNum int, totalPages int) string {
-	res := strings.ReplaceAll(template, "{pageNumber}", strconv.Itoa(pageNum))
-	res = strings.ReplaceAll(res, "{page}", strconv.Itoa(pageNum))
-	res = strings.ReplaceAll(res, "{totalPages}", strconv.Itoa(totalPages))
-	res = strings.ReplaceAll(res, "{pages}", strconv.Itoa(totalPages))
-	return res
+// pageExprRe matches {page}, {pageNumber}, {pages}, {totalPages} with an
+// optional +N / -N offset, e.g. {page+1} or {totalPages-1}.
+var pageExprRe = regexp.MustCompile(`\{\s*(pageNumber|page|totalPages|pages)\s*([+-]\s*\d+)?\s*\}`)
+
+// replacePagePlaceholders substitutes page-number tokens in a header/footer.
+func replacePagePlaceholders(template string, pageNum, totalPages int) string {
+	return pageExprRe.ReplaceAllStringFunc(template, func(match string) string {
+		groups := pageExprRe.FindStringSubmatch(match)
+		if groups == nil {
+			return match
+		}
+
+		base := pageNum
+		switch groups[1] {
+		case "totalPages", "pages":
+			base = totalPages
+		}
+
+		if offset := strings.ReplaceAll(groups[2], " ", ""); offset != "" {
+			if delta, err := strconv.Atoi(offset); err == nil {
+				base += delta
+			}
+		}
+		return strconv.Itoa(base)
+	})
+}
+
+// hasPagePlaceholder reports whether a template varies per page. When it does
+// not, one render is reused for every page instead of N identical renders.
+func hasPagePlaceholder(template string) bool {
+	return pageExprRe.MatchString(template)
+}
+
+// config holds every resolved CLI option.
+type config struct {
+	contentFile, outputFile          string
+	headerFile, footerFile           string
+	watermarkFile, baseURL           string
+	paperSize, orientation           string
+	margin                           string
+	marginTop, marginBottom          string
+	marginLeft, marginRight          string
+	headerHeight, footerHeight       string
+	headerSpacing, footerSpacing     string
+	scale                            float64
+	preferCSSPageSize                bool
+	watermarkOpacity                 float64
+	watermarkBehind                  bool
+	pageOffset, totalOffset          int
+	title, author, subject, keywords string
+	chromePath                       string
+	timeoutSeconds                   int
+	quiet, showHelp, showVersion     bool
+}
+
+func parseFlags(cfg *config) error {
+	fs := flag.NewFlagSet("snpdf", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Usage = printUsage
+
+	fs.StringVar(&cfg.contentFile, "content", "", "")
+	fs.StringVar(&cfg.outputFile, "output", "", "")
+	fs.StringVar(&cfg.headerFile, "header", "", "")
+	fs.StringVar(&cfg.footerFile, "footer", "", "")
+	fs.StringVar(&cfg.watermarkFile, "watermark", "", "")
+	fs.StringVar(&cfg.baseURL, "base-url", "", "")
+	fs.StringVar(&cfg.paperSize, "paper", "A4", "")
+	fs.StringVar(&cfg.orientation, "orientation", "portrait", "")
+	fs.StringVar(&cfg.margin, "margin", "", "")
+	fs.StringVar(&cfg.marginTop, "margin-top", "0", "")
+	fs.StringVar(&cfg.marginBottom, "margin-bottom", "0", "")
+	fs.StringVar(&cfg.marginLeft, "margin-left", "0", "")
+	fs.StringVar(&cfg.marginRight, "margin-right", "0", "")
+	fs.StringVar(&cfg.headerHeight, "header-height", "0", "")
+	fs.StringVar(&cfg.footerHeight, "footer-height", "0", "")
+	fs.StringVar(&cfg.headerSpacing, "header-spacing", "0", "")
+	fs.StringVar(&cfg.footerSpacing, "footer-spacing", "0", "")
+	fs.Float64Var(&cfg.scale, "scale", 1.0, "")
+	fs.BoolVar(&cfg.preferCSSPageSize, "prefer-css-page-size", false, "")
+	fs.Float64Var(&cfg.watermarkOpacity, "watermark-opacity", 0.3, "")
+	fs.BoolVar(&cfg.watermarkBehind, "watermark-behind", false, "")
+	fs.IntVar(&cfg.pageOffset, "page-offset", 0, "")
+	fs.IntVar(&cfg.totalOffset, "total-offset", 0, "")
+	fs.StringVar(&cfg.title, "title", "", "")
+	fs.StringVar(&cfg.author, "author", "", "")
+	fs.StringVar(&cfg.subject, "subject", "", "")
+	fs.StringVar(&cfg.keywords, "keywords", "", "")
+	fs.StringVar(&cfg.chromePath, "chrome", "", "")
+	fs.IntVar(&cfg.timeoutSeconds, "timeout", 120, "")
+	fs.BoolVar(&cfg.quiet, "quiet", false, "")
+	fs.BoolVar(&cfg.quiet, "q", false, "")
+	fs.BoolVar(&cfg.showHelp, "help", false, "")
+	fs.BoolVar(&cfg.showHelp, "h", false, "")
+	fs.BoolVar(&cfg.showVersion, "version", false, "")
+	fs.BoolVar(&cfg.showVersion, "v", false, "")
+
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			printUsage()
+			return flag.ErrHelp
+		}
+		printUsage()
+		return err
+	}
+	if extra := fs.Args(); len(extra) > 0 {
+		return fmt.Errorf("unexpected argument %q (all options use --flag form)", extra[0])
+	}
+	return nil
+}
+
+// readHTMLInput reads an HTML file, or stdin when path is "-".
+func readHTMLInput(path string) (string, error) {
+	if path == "-" {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", fmt.Errorf("failed to read HTML from stdin: %w", err)
+		}
+		if len(data) == 0 {
+			return "", errors.New("no HTML received on stdin")
+		}
+		return string(data), nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read '%s': %w", path, err)
+	}
+	return string(data), nil
 }
 
 func run() error {
-	var (
-		contentFile      string
-		outputFile       string
-		headerFile       string
-		footerFile       string
-		watermarkFile    string
-		paperSize        string
-		orientation      string
-		marginTopStr     string
-		marginBottomStr  string
-		marginLeftStr    string
-		marginRightStr   string
-		headerHeightStr  string
-		footerHeightStr  string
-		watermarkOpacity float64
-		chromePath       string
-		showHelp         bool
-	)
+	var cfg config
+	if err := parseFlags(&cfg); err != nil {
+		return err
+	}
 
-	flag.StringVar(&contentFile, "content", "", "Path to content HTML file (required)")
-	flag.StringVar(&outputFile, "output", "", "Path to output PDF file (required)")
-	flag.StringVar(&headerFile, "header", "", "Path to header HTML file")
-	flag.StringVar(&footerFile, "footer", "", "Path to footer HTML file")
-	flag.StringVar(&watermarkFile, "watermark", "", "Path to watermark HTML file")
-	flag.StringVar(&paperSize, "paper", "A4", "Paper size: A4, A3, A5, Letter, Legal")
-	flag.StringVar(&orientation, "orientation", "portrait", "Orientation: portrait, landscape")
-	flag.StringVar(&marginTopStr, "margin-top", "0", "Top margin (e.g. 25mm, 1in)")
-	flag.StringVar(&marginBottomStr, "margin-bottom", "0", "Bottom margin (e.g. 25mm, 1in)")
-	flag.StringVar(&marginLeftStr, "margin-left", "0", "Left margin (e.g. 10mm, 0.5in)")
-	flag.StringVar(&marginRightStr, "margin-right", "0", "Right margin (e.g. 10mm, 0.5in)")
-	flag.StringVar(&headerHeightStr, "header-height", "0", "Header height (e.g. 25mm)")
-	flag.StringVar(&footerHeightStr, "footer-height", "0", "Footer height (e.g. 15mm)")
-	flag.Float64Var(&watermarkOpacity, "watermark-opacity", 0.3, "Watermark opacity (0.0 - 1.0)")
-	flag.StringVar(&chromePath, "chrome", "", "Path to Chrome/Chromium executable")
-	flag.BoolVar(&showHelp, "help", false, "Show help")
-	flag.BoolVar(&showHelp, "h", false, "Show help")
-
-	flag.Parse()
-
-	if showHelp {
+	if cfg.showHelp {
 		printUsage()
 		return nil
 	}
-
-	if contentFile == "" {
-		printUsage()
-		return fmt.Errorf("flag --content is required")
+	if cfg.showVersion {
+		fmt.Println("snpdf " + Version)
+		return nil
 	}
-	if outputFile == "" {
+	if cfg.contentFile == "" {
 		printUsage()
-		return fmt.Errorf("flag --output is required")
+		return errors.New("--content is required")
+	}
+	if cfg.outputFile == "" {
+		printUsage()
+		return errors.New("--output is required")
 	}
 
-	// Read content HTML
-	contentBytes, err := os.ReadFile(contentFile)
+	toStdout := cfg.outputFile == "-"
+	// Progress must never contaminate a PDF being piped to stdout.
+	logf := func(format string, args ...interface{}) {
+		if !cfg.quiet {
+			fmt.Fprintf(os.Stderr, format, args...)
+		}
+	}
+
+	contentHTML, err := readHTMLInput(cfg.contentFile)
 	if err != nil {
-		return fmt.Errorf("failed to read content file '%s': %w", contentFile, err)
+		return err
 	}
-	contentHTML := string(contentBytes)
 
-	// Read optional HTML files
 	var headerHTML, footerHTML, watermarkHTML string
-	if headerFile != "" {
-		hb, err := os.ReadFile(headerFile)
-		if err != nil {
-			return fmt.Errorf("failed to read header file '%s': %w", headerFile, err)
+	if cfg.headerFile != "" {
+		if headerHTML, err = readHTMLInput(cfg.headerFile); err != nil {
+			return err
 		}
-		headerHTML = string(hb)
+	}
+	if cfg.footerFile != "" {
+		if footerHTML, err = readHTMLInput(cfg.footerFile); err != nil {
+			return err
+		}
+	}
+	if cfg.watermarkFile != "" {
+		if watermarkHTML, err = readHTMLInput(cfg.watermarkFile); err != nil {
+			return err
+		}
 	}
 
-	if footerFile != "" {
-		fb, err := os.ReadFile(footerFile)
-		if err != nil {
-			return fmt.Errorf("failed to read footer file '%s': %w", footerFile, err)
-		}
-		footerHTML = string(fb)
-	}
-
-	if watermarkFile != "" {
-		wb, err := os.ReadFile(watermarkFile)
-		if err != nil {
-			return fmt.Errorf("failed to read watermark file '%s': %w", watermarkFile, err)
-		}
-		watermarkHTML = string(wb)
-	}
-
-	// Parse dimensions
-	paperWidthInches, paperHeightInches, err := GetPaperDimensions(paperSize, orientation)
+	geo, err := resolveGeometry(&cfg)
 	if err != nil {
 		return err
 	}
 
-	marginTopInches, err := ParseDimensionToInches(marginTopStr)
-	if err != nil {
-		return fmt.Errorf("invalid margin-top: %w", err)
+	if cfg.scale < 0.1 || cfg.scale > 2.0 {
+		return fmt.Errorf("--scale must be between 0.1 and 2.0, got %g", cfg.scale)
 	}
-	marginBottomInches, err := ParseDimensionToInches(marginBottomStr)
-	if err != nil {
-		return fmt.Errorf("invalid margin-bottom: %w", err)
+	if cfg.watermarkOpacity < 0 || cfg.watermarkOpacity > 1 {
+		return fmt.Errorf("--watermark-opacity must be between 0.0 and 1.0, got %g", cfg.watermarkOpacity)
 	}
-	marginLeftInches, err := ParseDimensionToInches(marginLeftStr)
-	if err != nil {
-		return fmt.Errorf("invalid margin-left: %w", err)
-	}
-	marginRightInches, err := ParseDimensionToInches(marginRightStr)
-	if err != nil {
-		return fmt.Errorf("invalid margin-right: %w", err)
+	if cfg.timeoutSeconds <= 0 {
+		return fmt.Errorf("--timeout must be positive, got %d", cfg.timeoutSeconds)
 	}
 
-	headerHeightInches, err := ParseDimensionToInches(headerHeightStr)
-	if err != nil {
-		return fmt.Errorf("invalid header-height: %w", err)
+	// Relative assets resolve against --base-url, else the content's directory.
+	baseDir := cfg.baseURL
+	if baseDir == "" && cfg.contentFile != "-" {
+		if abs, err := filepath.Abs(cfg.contentFile); err == nil {
+			baseDir = filepath.Dir(abs)
+		}
 	}
-	footerHeightInches, err := ParseDimensionToInches(footerHeightStr)
-	if err != nil {
-		return fmt.Errorf("invalid footer-height: %w", err)
+	if baseDir != "" {
+		info, err := os.Stat(baseDir)
+		if err != nil || !info.IsDir() {
+			return fmt.Errorf("--base-url must be an existing directory: %s", baseDir)
+		}
 	}
 
-	// Detect Chrome
-	resolvedChromePath, err := DetectChromeBinary(chromePath)
+	chromeBin, err := DetectChromeBinary(cfg.chromePath)
 	if err != nil {
 		return err
 	}
 
-	// Create temp directory for intermediate PDFs
-	tempDir, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("snpdf_%d_*", time.Now().UnixNano()))
+	tempDir, err := os.MkdirTemp("", "snpdf-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Initialize Chrome renderer
-	renderer, err := NewChromeRenderer(resolvedChromePath)
+	renderer, err := NewChromeRenderer(chromeBin, cfg.quiet)
 	if err != nil {
-		return fmt.Errorf("failed to initialize Chrome renderer: %w", err)
+		return err
 	}
 	defer renderer.Close()
 
-	isLandscape := strings.EqualFold(strings.TrimSpace(orientation), "landscape")
-
-	// Step 2: Render content.html to content.pdf
-	// Top/bottom margins for content = header-height + margin-top and footer-height + margin-bottom
-	contentMarginTop := marginTopInches
-	if headerFile != "" {
-		contentMarginTop += headerHeightInches
-	}
-	contentMarginBottom := marginBottomInches
-	if footerFile != "" {
-		contentMarginBottom += footerHeightInches
+	job := &job{
+		cfg:      &cfg,
+		geo:      geo,
+		renderer: renderer,
+		tempDir:  tempDir,
+		baseDir:  baseDir,
+		logf:     logf,
 	}
 
-	contentPDFPath := filepath.Join(tempDir, "content.pdf")
-	fmt.Print("Rendering content... ")
-	err = renderer.RenderHTMLToPDF(contentHTML, contentPDFPath, RenderOptions{
-		PaperWidthInches:   paperWidthInches,
-		PaperHeightInches:  paperHeightInches,
-		MarginTopInches:    contentMarginTop,
-		MarginBottomInches: contentMarginBottom,
-		MarginLeftInches:   marginLeftInches,
-		MarginRightInches:  marginRightInches,
-		Landscape:          isLandscape,
-	})
+	finalPDF, totalPages, err := job.build(contentHTML, headerHTML, footerHTML, watermarkHTML)
 	if err != nil {
-		fmt.Println("failed")
-		return fmt.Errorf("failed to render content PDF: %w", err)
+		return err
 	}
-	fmt.Println("done")
 
-	// Step 3: Get total page count from content.pdf
-	totalPages, err := GetPDFPageCount(contentPDFPath)
+	if err := writeOutput(finalPDF, cfg.outputFile, toStdout); err != nil {
+		return err
+	}
+
+	if toStdout {
+		logf("Generated %d page(s) to stdout\n", totalPages)
+	} else {
+		logf("Generated %s (%d pages)\n", cfg.outputFile, totalPages)
+	}
+	return nil
+}
+
+func writeOutput(srcPDF, outputFile string, toStdout bool) error {
+	data, err := os.ReadFile(srcPDF)
 	if err != nil {
-		return fmt.Errorf("failed to inspect total pages: %w", err)
+		return fmt.Errorf("failed to read generated PDF: %w", err)
 	}
 
-	currentWorkingPDF := contentPDFPath
-
-	// Step 4-7: Per-page Header generation and stamping
-	if headerFile != "" {
-		var headerPagePDFs []string
-		for pageNum := 1; pageNum <= totalPages; pageNum++ {
-			fmt.Printf("Page %d/%d header... ", pageNum, totalPages)
-			pageHeaderHTML := replacePagePlaceholders(headerHTML, pageNum, totalPages)
-			pageHeaderPDF := filepath.Join(tempDir, fmt.Sprintf("header-%d.pdf", pageNum))
-
-			hHeight := headerHeightInches
-			if hHeight <= 0 {
-				hHeight = 1.0 // fallback
-			}
-			err := renderer.RenderHTMLToPDF(pageHeaderHTML, pageHeaderPDF, RenderOptions{
-				PaperWidthInches:   paperWidthInches,
-				PaperHeightInches:  hHeight,
-				MarginTopInches:    0,
-				MarginBottomInches: 0,
-				MarginLeftInches:   0,
-				MarginRightInches:  0,
-				Landscape:          isLandscape,
-			})
-			if err != nil {
-				fmt.Println("failed")
-				return fmt.Errorf("failed to render header for page %d: %w", pageNum, err)
-			}
-			headerPagePDFs = append(headerPagePDFs, pageHeaderPDF)
-			fmt.Println("done")
+	if toStdout {
+		if _, err := os.Stdout.Write(data); err != nil {
+			return fmt.Errorf("failed to write PDF to stdout: %w", err)
 		}
-
-		stampedWithHeaderPDF := filepath.Join(tempDir, "content-with-header.pdf")
-		if err := MultiStampPages(currentWorkingPDF, headerPagePDFs, stampedWithHeaderPDF, "tc"); err != nil {
-			return fmt.Errorf("failed to stamp headers onto content: %w", err)
-		}
-		currentWorkingPDF = stampedWithHeaderPDF
+		return nil
 	}
 
-	// Step 4-8: Per-page Footer generation and stamping
-	if footerFile != "" {
-		var footerPagePDFs []string
-		for pageNum := 1; pageNum <= totalPages; pageNum++ {
-			fmt.Printf("Page %d/%d footer... ", pageNum, totalPages)
-			pageFooterHTML := replacePagePlaceholders(footerHTML, pageNum, totalPages)
-			pageFooterPDF := filepath.Join(tempDir, fmt.Sprintf("footer-%d.pdf", pageNum))
-
-			fHeight := footerHeightInches
-			if fHeight <= 0 {
-				fHeight = 0.6 // fallback
-			}
-			err := renderer.RenderHTMLToPDF(pageFooterHTML, pageFooterPDF, RenderOptions{
-				PaperWidthInches:   paperWidthInches,
-				PaperHeightInches:  fHeight,
-				MarginTopInches:    0,
-				MarginBottomInches: 0,
-				MarginLeftInches:   0,
-				MarginRightInches:  0,
-				Landscape:          isLandscape,
-			})
-			if err != nil {
-				fmt.Println("failed")
-				return fmt.Errorf("failed to render footer for page %d: %w", pageNum, err)
-			}
-			footerPagePDFs = append(footerPagePDFs, pageFooterPDF)
-			fmt.Println("done")
-		}
-
-		stampedWithFooterPDF := filepath.Join(tempDir, "content-with-footer.pdf")
-		if err := MultiStampPages(currentWorkingPDF, footerPagePDFs, stampedWithFooterPDF, "bc"); err != nil {
-			return fmt.Errorf("failed to stamp footers onto content: %w", err)
-		}
-		currentWorkingPDF = stampedWithFooterPDF
-	}
-
-	// Step 9: Watermark
-	if watermarkFile != "" {
-		fmt.Print("Rendering watermark... ")
-		watermarkPDF := filepath.Join(tempDir, "watermark.pdf")
-		err := renderer.RenderHTMLToPDF(watermarkHTML, watermarkPDF, RenderOptions{
-			PaperWidthInches:   paperWidthInches,
-			PaperHeightInches:  paperHeightInches,
-			MarginTopInches:    0,
-			MarginBottomInches: 0,
-			MarginLeftInches:   0,
-			MarginRightInches:  0,
-			Landscape:          isLandscape,
-		})
-		if err != nil {
-			fmt.Println("failed")
-			return fmt.Errorf("failed to render watermark: %w", err)
-		}
-		fmt.Println("done")
-
-		stampedWithWatermarkPDF := filepath.Join(tempDir, "content-with-watermark.pdf")
-		if err := AddWatermarkPDF(currentWorkingPDF, watermarkPDF, stampedWithWatermarkPDF, watermarkOpacity); err != nil {
-			return fmt.Errorf("failed to stamp watermark onto PDF: %w", err)
-		}
-		currentWorkingPDF = stampedWithWatermarkPDF
-	}
-
-	// Step 10: Copy final output to destination
-	outDir := filepath.Dir(outputFile)
-	if outDir != "" && outDir != "." {
-		if err := os.MkdirAll(outDir, 0755); err != nil {
-			return fmt.Errorf("failed to create output directory '%s': %w", outDir, err)
+	if dir := filepath.Dir(outputFile); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory '%s': %w", dir, err)
 		}
 	}
-
-	finalBytes, err := os.ReadFile(currentWorkingPDF)
-	if err != nil {
-		return fmt.Errorf("failed to read processed PDF: %w", err)
+	if err := os.WriteFile(outputFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write '%s': %w", outputFile, err)
 	}
-
-	if err := os.WriteFile(outputFile, finalBytes, 0644); err != nil {
-		return fmt.Errorf("failed to write output PDF '%s': %w", outputFile, err)
-	}
-
-	fmt.Printf("Successfully generated %s (%d pages)\n", outputFile, totalPages)
 	return nil
 }
