@@ -1,0 +1,57 @@
+<?php
+
+declare(strict_types=1);
+
+namespace PDF\Facades;
+
+use Illuminate\Support\Facades\Facade;
+use PDF\Pdf as PdfBuilder;
+
+/**
+ * @method static PdfBuilder make()
+ * @method static PdfBuilder content(\Illuminate\Contracts\Support\Renderable|string $html)
+ * @method static PdfBuilder header(\Illuminate\Contracts\Support\Renderable|string $html)
+ * @method static PdfBuilder footer(\Illuminate\Contracts\Support\Renderable|string $html)
+ * @method static PdfBuilder watermark(\Illuminate\Contracts\Support\Renderable|string $html)
+ * @method static PdfBuilder paper(string $paper)
+ * @method static PdfBuilder orientation(string $orientation)
+ * @method static PdfBuilder margin(string $margin)
+ * @method static PdfBuilder marginTop(string $margin)
+ * @method static PdfBuilder marginBottom(string $margin)
+ * @method static PdfBuilder marginLeft(string $margin)
+ * @method static PdfBuilder marginRight(string $margin)
+ * @method static PdfBuilder headerHeight(string $height)
+ * @method static PdfBuilder footerHeight(string $height)
+ * @method static PdfBuilder headerSpacing(string $spacing)
+ * @method static PdfBuilder footerSpacing(string $spacing)
+ * @method static PdfBuilder headerOffset(string $offset)
+ * @method static PdfBuilder footerOffset(string $offset)
+ * @method static PdfBuilder watermarkOpacity(float $opacity)
+ * @method static PdfBuilder watermarkBehind(bool $behind = true)
+ * @method static PdfBuilder scale(float $scale)
+ * @method static PdfBuilder pageOffset(int $offset)
+ * @method static PdfBuilder totalOffset(int $offset)
+ * @method static PdfBuilder title(string $title)
+ * @method static PdfBuilder author(string $author)
+ * @method static PdfBuilder subject(string $subject)
+ * @method static PdfBuilder keywords(string $keywords)
+ * @method static PdfBuilder baseUrl(string $baseUrl)
+ * @method static PdfBuilder quiet(bool $quiet = true)
+ * @method static PdfBuilder timeout(int $timeout)
+ * @method static PdfBuilder chromePath(string $chromePath)
+ * @method static PdfBuilder binaryPath(string $binaryPath)
+ * @method static \Illuminate\Http\Response download(string $filename = 'document.pdf')
+ * @method static \Illuminate\Http\Response inline(string $filename = 'document.pdf')
+ * @method static string save(string $path)
+ * @method static string toFile(string $path)
+ * @method static string get()
+ *
+ * @see \PDF\Pdf
+ */
+class Pdf extends Facade
+{
+    protected static function getFacadeAccessor(): string
+    {
+        return 'pdf';
+    }
+}

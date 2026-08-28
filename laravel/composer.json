@@ -1,0 +1,62 @@
+{
+    "name": "mikailfaruqali/pdf",
+    "description": "Blazing-fast, modern HTML to PDF converter for Laravel powered by headless Chrome and Go.",
+    "keywords": [
+        "laravel",
+        "pdf",
+        "chrome",
+        "headless-chrome",
+        "html-to-pdf"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Mikail Faruq Ali",
+            "email": "alanfaruq85@gmail.com",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.4",
+        "illuminate/contracts": "^11.0|^12.0",
+        "illuminate/support": "^11.0|^12.0",
+        "illuminate/http": "^11.0|^12.0",
+        "symfony/process": "^7.0"
+    },
+    "require-dev": {
+        "driftingly/rector-laravel": "^2.4",
+        "laravel/pint": "^1.29",
+        "orchestra/testbench": "^9.0|^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "PDF\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "PDF\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "PDF\\PdfServiceProvider"
+            ],
+            "aliases": {
+                "Pdf": "PDF\\Facades\\Pdf"
+            }
+        }
+    },
+    "scripts": {
+        "fix-all": [
+            "./vendor/bin/rector process",
+            "./vendor/bin/pint --dirty"
+        ]
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

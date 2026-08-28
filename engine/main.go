@@ -15,11 +15,11 @@ import (
 // Version is stamped at build time with -ldflags "-X main.Version=v1.2.3".
 var Version = "dev"
 
-const usageText = `snpdf ` + `- HTML to PDF converter using headless Chrome
+const usageText = `pdf ` + `- HTML to PDF converter using headless Chrome
 
 Usage:
-  snpdf --content content.html --output invoice.pdf [options]
-  cat page.html | snpdf --content - --output - > out.pdf
+  pdf --content content.html --output invoice.pdf [options]
+  cat page.html | pdf --content - --output - > out.pdf
 
 Input / output:
   --content <path>        Content HTML file, or "-" for stdin (required)
@@ -87,7 +87,7 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			os.Exit(0)
 		}
-		fmt.Fprintf(os.Stderr, "snpdf: %v\n", err)
+		fmt.Fprintf(os.Stderr, "pdf: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -150,7 +150,7 @@ type config struct {
 }
 
 func parseFlags(cfg *config) error {
-	fs := flag.NewFlagSet("snpdf", flag.ContinueOnError)
+	fs := flag.NewFlagSet("pdf", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.Usage = printUsage
 
@@ -237,7 +237,7 @@ func run() error {
 		return nil
 	}
 	if cfg.showVersion {
-		fmt.Println("snpdf " + Version)
+		fmt.Println("pdf " + Version)
 		return nil
 	}
 	if cfg.contentFile == "" {

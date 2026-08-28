@@ -1,210 +1,91 @@
-# snpdf
+# pdf
 
-A standalone, cross-platform CLI that converts HTML to PDF using headless Chrome — a modern replacement for `wkhtmltopdf`, with real separate header/footer documents, dynamic page numbering, and watermarks.
+A standalone CLI tool that converts HTML to PDF using headless Google Chrome, Chromium, Brave, or Microsoft Edge.
 
-Because rendering is done by Chrome, **modern CSS just works**: flexbox, grid, custom properties, web fonts, SVG, and RTL/CJK typography.
-
-## Features
-
-- **True separate header & footer** — rendered as independent HTML documents and stamped onto each page, avoiding the severe CSS limits of Chrome's native print header/footer.
-- **Fast on long documents** — the header and footer for the whole document are produced in a *single* Chrome render, not one per page. A 63-page report takes ~9s instead of ~91s.
-- **Dynamic page numbering** — `{page}`, `{totalPages}`, and offsets like `{page+1}`.
-- **Watermarks** — any HTML, with adjustable opacity, over or under the content.
-- **Relative assets work** — `<img src="logo.png">` and `<link href="style.css">` resolve against the document's own directory.
-- **Pipe friendly** — reads HTML on stdin and writes PDF to stdout, so no temp files are needed.
-- **No HTTP server, no Docker** — a single binary invoked like `wkhtmltopdf`.
+- ⚡ **Near-instant startup**: written in Go, compiles to a single static binary
+- 🎨 **Full modern CSS support**: Grid, Flexbox, Tailwind, Web fonts, Canvas, SVG
+- 📑 **Independent headers & footers**: sit flush against the paper edge, full-bleed backgrounds supported
+- 🔢 **Page numbering**: `{page}`, `{pages}`, `{pageNumber}`, `{totalPages}`, `{page+1}` placeholders
+- 🏷️ **Watermarks**: stamp HTML text or images diagonally across every page with custom opacity
+- 📐 **Paper sizes**: standard presets (`A4`, `Letter`, `Legal`, etc.) or custom dimensions (`210x297mm`)
+- 🔒 **Zero cloud dependencies**: runs 100% locally on your machine or server
 
 ---
 
 ## Installation
 
-### Prerequisites
-- Go 1.23+ to build
-- Google Chrome, Chromium, Edge, or Brave installed at runtime
+### Pre-built binaries
 
-### Build
+Download the latest binary for your OS and architecture from [Releases](https://github.com/mikailfaruqali/pdf/releases).
+
+### Build from source
+
+Requires [Go 1.23+](https://golang.org/dl/):
 
 ```bash
 # Windows
-GOOS=windows GOARCH=amd64 go build -ldflags="-s -w -X main.Version=v1.0.0" -o snpdf.exe .
+go build -ldflags="-s -w" -o pdf.exe .
 
 # Linux
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.Version=v1.0.0" -o snpdf .
+go build -ldflags="-s -w" -o pdf .
 
 # macOS (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w -X main.Version=v1.0.0" -o snpdf-darwin-arm64 .
+go build -ldflags="-s -w" -o pdf-darwin-arm64 .
 ```
 
-Put the binary anywhere on your `PATH` and call it as `snpdf`.
+Put the binary anywhere on your `PATH` and call it as `pdf`.
 
 ---
 
-## Usage
+## Quick start
 
 ```bash
-snpdf \
-  --content content.html \
-  --header header.html \
-  --footer footer.html \
-  --watermark watermark.html \
+# Basic conversion
+pdf \
+  --content invoice.html \
   --output invoice.pdf \
   --paper A4 \
-  --margin 10mm \
+  --margin 10mm
+
+# With header, footer, and page numbers
+pdf \
+  --content invoice.html \
+  --output invoice.pdf \
+  --header header.html \
+  --footer footer.html \
   --header-height 25mm \
   --footer-height 15mm
+
+# Pipe HTML via stdin, output PDF to stdout
+cat invoice.html | pdf --content - --output - > invoice.pdf
 ```
-
-Piping, with no files on disk:
-
-```bash
-cat invoice.html | snpdf --content - --output - > invoice.pdf
-```
-
-### Options
-
-| Flag | Default | Description |
-| :--- | :--- | :--- |
-| `--content` | *(required)* | Content HTML file, or `-` for stdin |
-| `--output` | *(required)* | Output PDF file, or `-` for stdout |
-| `--header` | `""` | Header HTML file |
-| `--footer` | `""` | Footer HTML file |
-| `--watermark` | `""` | Watermark HTML file |
-| `--base-url` | *content's dir* | Directory that relative asset URLs resolve against |
-| `--paper` | `A4` | `A0`–`A6`, `B4`, `B5`, `Letter`, `Legal`, `Tabloid`, `Ledger`, `Executive`, `Statement`, or `WIDTHxHEIGHT` |
-| `--orientation` | `portrait` | `portrait` or `landscape` |
-| `--margin` | `0` | Sets all four margins at once |
-| `--margin-top/-bottom/-left/-right` | `0` | Individual margins (override `--margin`) |
-| `--header-height` | `0` | Height reserved for the header |
-| `--footer-height` | `0` | Height reserved for the footer |
-| `--header-spacing` | `0` | Gap between header and content |
-| `--footer-spacing` | `0` | Gap between content and footer |
-| `--header-offset` | `0` | Push the header down from the paper edge |
-| `--footer-offset` | `0` | Push the footer up from the paper edge |
-| `--scale` | `1.0` | Render scale, `0.1`–`2.0` |
-| `--prefer-css-page-size` | `false` | Honour `@page size` in CSS instead of `--paper` |
-| `--watermark-opacity` | `0.3` | Watermark opacity, `0.0`–`1.0` |
-| `--watermark-behind` | `false` | Draw the watermark under the content |
-| `--page-offset` | `0` | Added to every rendered page number |
-| `--total-offset` | `0` | Added to the reported total page count |
-| `--title` / `--author` / `--subject` / `--keywords` | `""` | PDF document metadata |
-| `--chrome` | *auto* | Path to the Chrome/Chromium binary |
-| `--timeout` | `120` | Per-render timeout in seconds |
-| `--timings` | `false` | Print how long each pipeline stage took |
-| `--quiet`, `-q` | `false` | Suppress progress output |
-| `--version`, `-v` | | Print version |
-| `--help`, `-h` | | Show help |
-
-**Dimensions** accept `mm`, `cm`, `in`, `pt`, `px`, or a bare number (treated as mm):
-`25mm`, `1in`, `2.5cm`, `18pt`, `96px`, `25`.
-
-### Header & footer placement
-
-Headers and footers sit **flush against the paper edge**, the same as
-`wkhtmltopdf`, so a full-bleed coloured band has no white strip above or below
-it. Use `--header-offset` / `--footer-offset` to inset them.
-
-The content area clears whichever is deeper — the page margin or the band —
-rather than the sum of the two, so `--margin 5mm --header-height 25mm` leaves
-25mm above the content, not 30mm.
-
-Progress goes to **stderr** and the PDF to **stdout**, so piping is always safe.
 
 ---
 
-## Page numbering
+## CLI Options
 
-Use these inside `header.html` and `footer.html`:
-
-| Placeholder | Meaning |
-| :--- | :--- |
-| `{page}` or `{pageNumber}` | Current page |
-| `{pages}` or `{totalPages}` | Total pages |
-| `{page+N}` / `{page-N}` | Offset current page, e.g. `{page+1}` |
-
-Example `footer.html`:
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body {
-      margin: 0;
-      padding: 0 10mm;
-      font: 12px sans-serif;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      height: 15mm;
-    }
-  </style>
-</head>
-<body>
-  <div>Company Confidential</div>
-  <div>Page {pageNumber} of {totalPages}</div>
-</body>
-</html>
-```
-
-> Keep the header/footer content within `--header-height` / `--footer-height`. If it
-> overflows onto a second page, snpdf reports the mismatch instead of silently
-> misaligning the page numbers.
+| Flag | Description | Default |
+|---|---|---|
+| `--content <path>` | Content HTML file, or `-` for stdin (**required**) | |
+| `--output <path>` | Output PDF file, or `-` for stdout (**required**) | |
+| `--header <path>` | Header HTML file, repeated on every page | |
+| `--footer <path>` | Footer HTML file, repeated on every page | |
+| `--watermark <path>` | Watermark HTML file, stamped on every page | |
+| `--paper <size>` | `A0`–`A6`, `Letter`, `Legal`, `Tabloid`, or `WIDTHxHEIGHT` | `A4` |
+| `--orientation <mode>` | `portrait` or `landscape` | `portrait` |
+| `--margin <dim>` | Set all four margins at once (`10mm`, `0.5in`, `20px`) | |
+| `--header-height <dim>` | Reserved header height | `0` |
+| `--footer-height <dim>` | Reserved footer height | `0` |
+| `--watermark-opacity <n>` | Opacity from `0.0` to `1.0` | `0.3` |
+| `--watermark-behind` | Place watermark under content | `false` |
+| `--scale <n>` | Render scale factor (`0.1` to `2.0`) | `1.0` |
+| `--chrome <path>` | Path to browser executable | *auto-detected* |
+| `--timeout <sec>` | Per-page render timeout | `120` |
+| `--quiet` | Suppress progress logs | `false` |
+| `--version` | Print version and exit | |
 
 ---
 
-## Laravel integration
+## License
 
-The binary is designed to be wrapped by a Laravel package. Minimal example:
-
-```php
-$process = new Symfony\Component\Process\Process([
-    'snpdf',
-    '--content', $contentPath,
-    '--header',  $headerPath,
-    '--footer',  $footerPath,
-    '--output',  $outputPath,
-    '--paper',   'A4',
-    '--margin',  '10mm',
-    '--header-height', '25mm',
-    '--footer-height', '15mm',
-    '--quiet',
-]);
-$process->mustRun();
-```
-
-Because `--content -` and `--output -` work, you can also stream a rendered Blade
-view straight through the process and capture the PDF without touching disk.
-
----
-
-## How it works
-
-1. **Content** — the top/bottom margins are expanded by the reserved header and footer
-   heights, then `content.html` is rendered to an intermediate PDF.
-2. **Page count** — read from that PDF with `pdfcpu`.
-3. **Header/footer** — if the template has no page placeholders it is rendered once and
-   reused. If it does, all N variants are laid out in **one** document separated by
-   forced page breaks and rendered in a single pass, then split per page.
-4. **Stamping** — each band is stamped into its reserved area with `pdfcpu`.
-5. **Watermark & metadata** — applied across all pages, then the result is written out.
-
-A single Chrome process is started for the whole run and each render reuses it as a new
-tab, which is what keeps large documents fast.
-
-### Why it is fast
-
-Four things do the heavy lifting; run with `--timings` to see the breakdown.
-
-- **One browser, many tabs.** Chrome starts once (~270ms) and every render is a tab on it.
-- **One render per band.** A header with `{pageNumber}` is expanded into a single document
-  with one band per page and rendered in one pass, rather than once per page.
-- **One PDF read and one write.** Header, footer, watermark and metadata are all applied
-  to a single in-memory document. Each `pdfcpu` file helper is a full parse-and-rewrite
-  cycle, so doing them as separate steps cost more than the rendering did.
-- **Native multi-stamping.** pdfcpu maps band page N onto document page N directly, so
-  the band never has to be split into per-page files.
-- **Concurrent renders.** Header, footer and watermark are independent, so they render in
-  parallel tabs.
-
-On a 63-page RTL report the remaining time is dominated by Chrome laying out the content
-itself, which is the irreducible part.
+MIT

@@ -1,6 +1,6 @@
-module snpdf
+module pdf
 
-go 1.23
+go 1.23.0
 
 require (
 	github.com/chromedp/cdproto v0.0.0-20250222051814-50c6cb17f10a
