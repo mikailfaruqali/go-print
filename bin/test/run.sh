@@ -2,17 +2,13 @@
 set -e
 
 echo "==================================================="
-echo "Running snpdf test suite on Linux"
+echo "Running pdf test suite on Linux"
 echo "==================================================="
 
 if [ -f "./pdf" ]; then
     BIN="./pdf"
 elif [ -f "../pdf" ]; then
     BIN="../pdf"
-elif [ -f "./snpdf" ]; then
-    BIN="./snpdf"
-elif [ -f "../snpdf" ]; then
-    BIN="../snpdf"
 else
     echo "Error: pdf binary not found. Please build it first:"
     echo "go build -ldflags=\"-s -w\" -o pdf ."

@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ===================================================
-echo Running snpdf test suite on Windows
+echo Running pdf test suite on Windows
 echo ===================================================
 
 rem Resolve paths from this script's own location so the test works no matter
@@ -11,8 +11,6 @@ set "ROOT=%~dp0.."
 
 if exist "%ROOT%\pdf.exe" (
     set "BIN=%ROOT%\pdf.exe"
-) else if exist "%ROOT%\snpdf.exe" (
-    set "BIN=%ROOT%\snpdf.exe"
 ) else (
     echo Error: pdf.exe not found in %ROOT%. Please build it first:
     echo   go build -ldflags="-s -w" -o pdf.exe .
@@ -36,7 +34,7 @@ for /f %%T in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixT
   --footer-height 15mm ^
   --header-spacing 8mm ^
   --footer-spacing 0 ^
-  --title "snpdf test document" ^
+  --title "pdf test document" ^
   --orientation portrait
 
 rem Capture the exit code first: any later command overwrites ERRORLEVEL.

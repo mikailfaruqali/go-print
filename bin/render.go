@@ -398,13 +398,13 @@ func buildPagedBandHTML(templateHTML string, totalPages int, heightInches float6
 	// pagination lines up 1:1 with the content pages.
 	fmt.Fprintf(&sb, `<style>
 html,body{margin:0;padding:0}
-.snpdf-band{height:%.4fin;overflow:hidden;position:relative;break-after:page;page-break-after:always}
-.snpdf-band:last-child{break-after:auto;page-break-after:auto}
+.pdf-band{height:%.4fin;overflow:hidden;position:relative;break-after:page;page-break-after:always}
+.pdf-band:last-child{break-after:auto;page-break-after:auto}
 </style></head><body>`, heightInches)
 
 	for p := 1; p <= totalPages; p++ {
 		rendered := replacePagePlaceholders(bodyInner, p+pageOffset, totalPages+totalOffset)
-		sb.WriteString(`<div class="snpdf-band"`)
+		sb.WriteString(`<div class="pdf-band"`)
 		if strings.TrimSpace(bodyAttrs) != "" {
 			sb.WriteString(" " + strings.TrimSpace(bodyAttrs))
 		}
