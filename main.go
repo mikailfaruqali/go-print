@@ -43,6 +43,11 @@ Page setup:
   --footer-height <dim>   Height reserved for the footer (default: 0)
   --header-spacing <dim>  Gap between header and content (default: 0)
   --footer-spacing <dim>  Gap between content and footer (default: 0)
+  --header-offset <dim>   Push the header down from the paper edge (default: 0)
+  --footer-offset <dim>   Push the footer up from the paper edge (default: 0)
+
+  Headers and footers sit flush against the paper edge, like wkhtmltopdf, so a
+  full-bleed band has no white strip. Use the offsets to inset them.
   --scale <n>             Render scale, 0.1 - 2.0 (default: 1.0)
   --prefer-css-page-size  Honour @page size in CSS instead of --paper
 
@@ -130,6 +135,7 @@ type config struct {
 	marginLeft, marginRight          string
 	headerHeight, footerHeight       string
 	headerSpacing, footerSpacing     string
+	headerOffset, footerOffset       string
 	scale                            float64
 	preferCSSPageSize                bool
 	watermarkOpacity                 float64
@@ -163,6 +169,8 @@ func parseFlags(cfg *config) error {
 	fs.StringVar(&cfg.footerHeight, "footer-height", "0", "")
 	fs.StringVar(&cfg.headerSpacing, "header-spacing", "0", "")
 	fs.StringVar(&cfg.footerSpacing, "footer-spacing", "0", "")
+	fs.StringVar(&cfg.headerOffset, "header-offset", "0", "")
+	fs.StringVar(&cfg.footerOffset, "footer-offset", "0", "")
 	fs.Float64Var(&cfg.scale, "scale", 1.0, "")
 	fs.BoolVar(&cfg.preferCSSPageSize, "prefer-css-page-size", false, "")
 	fs.Float64Var(&cfg.watermarkOpacity, "watermark-opacity", 0.3, "")

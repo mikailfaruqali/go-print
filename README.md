@@ -78,6 +78,8 @@ cat invoice.html | snpdf --content - --output - > invoice.pdf
 | `--footer-height` | `0` | Height reserved for the footer |
 | `--header-spacing` | `0` | Gap between header and content |
 | `--footer-spacing` | `0` | Gap between content and footer |
+| `--header-offset` | `0` | Push the header down from the paper edge |
+| `--footer-offset` | `0` | Push the footer up from the paper edge |
 | `--scale` | `1.0` | Render scale, `0.1`–`2.0` |
 | `--prefer-css-page-size` | `false` | Honour `@page size` in CSS instead of `--paper` |
 | `--watermark-opacity` | `0.3` | Watermark opacity, `0.0`–`1.0` |
@@ -93,6 +95,16 @@ cat invoice.html | snpdf --content - --output - > invoice.pdf
 
 **Dimensions** accept `mm`, `cm`, `in`, `pt`, `px`, or a bare number (treated as mm):
 `25mm`, `1in`, `2.5cm`, `18pt`, `96px`, `25`.
+
+### Header & footer placement
+
+Headers and footers sit **flush against the paper edge**, the same as
+`wkhtmltopdf`, so a full-bleed coloured band has no white strip above or below
+it. Use `--header-offset` / `--footer-offset` to inset them.
+
+The content area clears whichever is deeper — the page margin or the band —
+rather than the sum of the two, so `--margin 5mm --header-height 25mm` leaves
+25mm above the content, not 30mm.
 
 Progress goes to **stderr** and the PDF to **stdout**, so piping is always safe.
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -15,6 +16,7 @@ type geometry struct {
 	marginLeft, marginRight      float64
 	headerHeight, footerHeight   float64
 	headerSpacing, footerSpacing float64
+	headerOffset, footerOffset   float64
 	landscape                    bool
 }
 
@@ -63,6 +65,8 @@ func resolveGeometry(cfg *config) (*geometry, error) {
 		{"footer-height", cfg.footerHeight, &g.footerHeight},
 		{"header-spacing", cfg.headerSpacing, &g.headerSpacing},
 		{"footer-spacing", cfg.footerSpacing, &g.footerSpacing},
+		{"header-offset", cfg.headerOffset, &g.headerOffset},
+		{"footer-offset", cfg.footerOffset, &g.footerOffset},
 	} {
 		v, err := parse(f.name, f.src)
 		if err != nil {
@@ -71,8 +75,12 @@ func resolveGeometry(cfg *config) (*geometry, error) {
 		*f.dst = v
 	}
 
-	// Guard against a layout with no room left for content.
-	usableV := g.paperHeight - g.marginTop - g.marginBottom - g.headerHeight - g.footerHeight - g.headerSpacing - g.footerSpacing
+	// Guard against a layout with no room left for content. Mirrors the
+	// max() the renderer uses, since bands overlap the margin rather than
+	// stacking on top of it.
+	topUsed := math.Max(g.marginTop, g.headerOffset+g.headerHeight+g.headerSpacing)
+	bottomUsed := math.Max(g.marginBottom, g.footerOffset+g.footerHeight+g.footerSpacing)
+	usableV := g.paperHeight - topUsed - bottomUsed
 	if usableV <= 0.2 {
 		return nil, fmt.Errorf("margins, header and footer leave no room for content on a %.2fin tall page", g.paperHeight)
 	}
@@ -105,15 +113,16 @@ func (j *job) timeout() time.Duration {
 func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (string, int, error) {
 	g := j.geo
 
-	// Content is inset by the bands reserved for the header and footer so the
-	// stamps never overlap body text.
+	// Content clears whichever is deeper: the page margin, or the band itself.
+	// The band starts at the paper edge, so adding the two would double-count
+	// the margin and leave a large empty strip under the header.
 	contentTop := g.marginTop
 	if headerHTML != "" {
-		contentTop += g.headerHeight + g.headerSpacing
+		contentTop = math.Max(contentTop, g.headerOffset+g.headerHeight+g.headerSpacing)
 	}
 	contentBottom := g.marginBottom
 	if footerHTML != "" {
-		contentBottom += g.footerHeight + g.footerSpacing
+		contentBottom = math.Max(contentBottom, g.footerOffset+g.footerHeight+g.footerSpacing)
 	}
 
 	j.logf("Rendering content... ")
@@ -147,9 +156,10 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 		current, err = j.applyBand(current, headerHTML, totalPages, bandSpec{
 			name:   "header",
 			height: g.headerHeight,
-			// Anchor to the top edge, then drop by the top margin so the band
-			// sits exactly in the reserved space.
-			placement: StampPlacement{Pos: "tc", OffsetY: -InchesToPoints(g.marginTop)},
+			// Flush with the top edge of the paper, like wkhtmltopdf, so a
+			// full-bleed header band has no white strip above it. --header-offset
+			// pushes it down for designs that want to sit inside the margin.
+			placement: StampPlacement{Pos: "tc", OffsetY: -InchesToPoints(g.headerOffset)},
 			fallback:  1.0,
 		})
 		if err != nil {
@@ -161,7 +171,7 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 		current, err = j.applyBand(current, footerHTML, totalPages, bandSpec{
 			name:      "footer",
 			height:    g.footerHeight,
-			placement: StampPlacement{Pos: "bc", OffsetY: InchesToPoints(g.marginBottom)},
+			placement: StampPlacement{Pos: "bc", OffsetY: InchesToPoints(g.footerOffset)},
 			fallback:  0.6,
 		})
 		if err != nil {
