@@ -61,6 +61,16 @@ func NewChromeRenderer(chromePath string, quiet bool) (*ChromeRenderer, error) {
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("safebrowsing-disable-auto-update", true),
 		chromedp.Flag("font-render-hinting", "none"),
+		chromedp.Flag("disable-breakpad", true),
+		chromedp.Flag("disable-component-update", true),
+		chromedp.Flag("disable-domain-reliability", true),
+		chromedp.Flag("disable-client-side-phishing-detection", true),
+		chromedp.Flag("disable-ipc-flooding-protection", true),
+		chromedp.Flag("no-default-browser-check", true),
+		chromedp.Flag("no-pings", true),
+		chromedp.Flag("password-store", "basic"),
+		chromedp.Flag("use-mock-keychain", true),
+		chromedp.Flag("disable-features", "Translate,OptimizationHints,MediaRouter,DialLocalDiscovery"),
 		// Keep background tabs rendering at full speed; without these Chrome
 		// throttles the tabs we print from and pages come out half-painted.
 		chromedp.Flag("disable-background-timer-throttling", true),
@@ -344,7 +354,7 @@ func readStream(ctx context.Context, handle cdpio.StreamHandle) ([]byte, error) 
 	var out []byte
 	for {
 		var res cdpio.ReadReturns
-		params := cdpio.Read(handle).WithSize(1 << 20)
+		params := cdpio.Read(handle).WithSize(10 << 20)
 		if err := cdp.Execute(ctx, cdproto.CommandIORead, params, &res); err != nil {
 			return nil, fmt.Errorf("failed to read PDF stream: %w", err)
 		}
@@ -364,16 +374,29 @@ func readStream(ctx context.Context, handle cdpio.StreamHandle) ([]byte, error) 
 }
 
 // waitForAssets blocks until webfonts are loaded and every image has either
-// decoded or failed. The previous fixed 100ms sleep raced with both.
+// decoded or failed. Uses requestAnimationFrame inside the browser event loop
+// rather than an arbitrary wall-clock sleep.
 func waitForAssets(ctx context.Context) error {
 	const script = `
 new Promise((resolve) => {
+  const onReady = () => {
+    if (window.requestAnimationFrame) {
+      requestAnimationFrame(() => resolve(true));
+    } else {
+      resolve(true);
+    }
+  };
   const done = () => {
     const imgs = Array.from(document.images || []);
     const pending = imgs.filter((i) => !i.complete);
-    if (pending.length === 0) { resolve(true); return; }
+    if (pending.length === 0) {
+      onReady();
+      return;
+    }
     let left = pending.length;
-    const tick = () => { if (--left <= 0) resolve(true); };
+    const tick = () => {
+      if (--left <= 0) onReady();
+    };
     pending.forEach((i) => {
       i.addEventListener('load', tick, { once: true });
       i.addEventListener('error', tick, { once: true });
@@ -389,12 +412,8 @@ new Promise((resolve) => {
 	// Bound the asset wait so one broken remote URL cannot hang the render.
 	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if err := chromedp.Evaluate(script, &ok, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+	_ = chromedp.Evaluate(script, &ok, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
 		return p.WithAwaitPromise(true)
-	}).Do(waitCtx); err != nil {
-		// A timeout or eval failure is not fatal; print what we have.
-		return nil
-	}
-	// Give the compositor one frame to paint the now-loaded assets.
-	return chromedp.Sleep(60 * time.Millisecond).Do(ctx)
+	}).Do(waitCtx)
+	return nil
 }

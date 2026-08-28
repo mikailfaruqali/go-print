@@ -257,6 +257,20 @@ func run() error {
 		}
 	}
 
+	chromeBin, err := DetectChromeBinary(cfg.chromePath)
+	if err != nil {
+		return err
+	}
+
+	renderer, err := NewChromeRenderer(chromeBin, cfg.quiet)
+	if err != nil {
+		return err
+	}
+	defer renderer.Close()
+
+	// Start browser eagerly in background while reading input files and resolving options
+	go renderer.Start()
+
 	contentHTML, err := readHTMLInput(cfg.contentFile)
 	if err != nil {
 		return err
@@ -308,38 +322,22 @@ func run() error {
 		}
 	}
 
-	chromeBin, err := DetectChromeBinary(cfg.chromePath)
-	if err != nil {
-		return err
-	}
-
-	tempDir, err := os.MkdirTemp("", "snpdf-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer os.RemoveAll(tempDir)
-
-	renderer, err := NewChromeRenderer(chromeBin, cfg.quiet)
-	if err != nil {
-		return err
-	}
-	defer renderer.Close()
-
 	job := &job{
 		cfg:      &cfg,
 		geo:      geo,
 		renderer: renderer,
-		tempDir:  tempDir,
 		baseDir:  baseDir,
 		rawLogf:  logf,
 	}
 
-	finalPDF, totalPages, err := job.build(contentHTML, headerHTML, footerHTML, watermarkHTML)
+	finalComp, totalPages, err := job.build(contentHTML, headerHTML, footerHTML, watermarkHTML)
 	if err != nil {
 		return err
 	}
 
-	if err := writeOutput(finalPDF, cfg.outputFile, toStdout); err != nil {
+	if err := job.step("write pdf", func() error {
+		return writeOutput(finalComp, cfg.outputFile, toStdout)
+	}); err != nil {
 		return err
 	}
 
@@ -351,14 +349,9 @@ func run() error {
 	return nil
 }
 
-func writeOutput(srcPDF, outputFile string, toStdout bool) error {
-	data, err := os.ReadFile(srcPDF)
-	if err != nil {
-		return fmt.Errorf("failed to read generated PDF: %w", err)
-	}
-
+func writeOutput(comp *Composer, outputFile string, toStdout bool) error {
 	if toStdout {
-		if _, err := os.Stdout.Write(data); err != nil {
+		if err := comp.Write(os.Stdout); err != nil {
 			return fmt.Errorf("failed to write PDF to stdout: %w", err)
 		}
 		return nil
@@ -369,7 +362,13 @@ func writeOutput(srcPDF, outputFile string, toStdout bool) error {
 			return fmt.Errorf("failed to create output directory '%s': %w", dir, err)
 		}
 	}
-	if err := os.WriteFile(outputFile, data, 0644); err != nil {
+	f, err := os.OpenFile(outputFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to create output file '%s': %w", outputFile, err)
+	}
+	defer f.Close()
+
+	if err := comp.Write(f); err != nil {
 		return fmt.Errorf("failed to write '%s': %w", outputFile, err)
 	}
 	return nil

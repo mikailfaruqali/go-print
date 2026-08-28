@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"math"
 	"os"
 
@@ -12,35 +14,47 @@ import (
 )
 
 // Composer applies every PDF-side operation to a single in-memory document.
-//
-// Each api.*File helper is a full read-validate-optimize-write cycle, so the
-// old pipeline parsed and rewrote the whole PDF once per stage (header, footer,
-// watermark, metadata). Loading once and writing once removes that entirely and
-// is the dominant cost on long documents.
 type Composer struct {
 	ctx  *model.Context
 	conf *model.Configuration
 }
 
-// NewComposer loads a PDF into memory ready for stamping.
-func NewComposer(pdfPath string) (*Composer, error) {
+func defaultConf() *model.Configuration {
 	conf := model.NewDefaultConfiguration()
 	conf.ValidationMode = model.ValidationRelaxed
 	conf.Cmd = model.ADDWATERMARKS
-	// Stamping does not need an optimized xref table, and the optimize pass is
-	// a large share of load time on long documents. pdfcpu recommends skipping
-	// it for exactly this case.
 	conf.Optimize = false
+	return conf
+}
 
+// NewComposerFromBytes loads a PDF from an in-memory byte slice.
+func NewComposerFromBytes(data []byte) (*Composer, error) {
+	conf := defaultConf()
+	ctx, err := api.ReadContext(bytes.NewReader(data), conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PDF: %w", err)
+	}
+	if err := ctx.EnsurePageCount(); err != nil {
+		return nil, fmt.Errorf("failed to count PDF pages: %w", err)
+	}
+	return &Composer{ctx: ctx, conf: conf}, nil
+}
+
+// NewComposer loads a PDF into memory ready for stamping.
+func NewComposer(pdfPath string) (*Composer, error) {
 	f, err := os.Open(pdfPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open %s: %w", pdfPath, err)
 	}
 	defer f.Close()
 
-	ctx, err := api.ReadValidateAndOptimize(f, conf)
+	conf := defaultConf()
+	ctx, err := api.ReadContext(f, conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", pdfPath, err)
+	}
+	if err := ctx.EnsurePageCount(); err != nil {
+		return nil, fmt.Errorf("failed to count pages of %s: %w", pdfPath, err)
 	}
 	return &Composer{ctx: ctx, conf: conf}, nil
 }
@@ -48,29 +62,18 @@ func NewComposer(pdfPath string) (*Composer, error) {
 // PageCount returns the number of pages in the loaded document.
 func (c *Composer) PageCount() int { return c.ctx.PageCount }
 
-// StampBand draws bandPDF over the document.
-//
-// When bandPDF holds one page per document page, pdfcpu's native multi-stamping
-// maps source page N onto destination page N in a single operation. That avoids
-// splitting the band into N temporary files and building N watermark objects,
-// which dominated the runtime on long documents.
-//
-// A single-page bandPDF repeats on every page.
-func (c *Composer) StampBand(bandPDF string, placement StampPlacement, multi bool) error {
+// StampBandBytes draws bandBytes over the document.
+func (c *Composer) StampBandBytes(bandBytes []byte, placement StampPlacement, multi bool) error {
 	desc := fmt.Sprintf("pos:%s, scale:1.0 abs, rot:0, off:%.2f %.2f",
 		placement.Pos, placement.OffsetX, placement.OffsetY)
 
-	wm, err := api.PDFWatermark(bandPDF, desc, true, false, types.POINTS)
+	wm, err := api.PDFWatermark("band.pdf", desc, true, false, types.POINTS)
 	if err != nil {
 		return fmt.Errorf("failed to create stamp: %w", err)
 	}
+	wm.PDF = bytes.NewReader(bandBytes)
 
 	if multi {
-		// PdfPageNrSrc 0 selects multi-stamp mode; source and destination both
-		// start at page 1, so the mapping is 1:1. Note that PDFWatermark parses
-		// the filename for ":page" suffixes, and a Windows path like C:\x.pdf
-		// already lands in multi-stamp mode, so set the fields explicitly
-		// rather than relying on that parsing.
 		wm.PdfPageNrSrc = 0
 		wm.PdfMultiStartPageNrSrc = 1
 		wm.PdfMultiStartPageNrDest = 1
@@ -84,21 +87,39 @@ func (c *Composer) StampBand(bandPDF string, placement StampPlacement, multi boo
 	return nil
 }
 
-// Watermark stamps a single-page PDF across every page.
-func (c *Composer) Watermark(watermarkPDFPath string, opacity float64, onTop bool) error {
+// StampBand draws bandPDF over the document.
+func (c *Composer) StampBand(bandPDF string, placement StampPlacement, multi bool) error {
+	data, err := os.ReadFile(bandPDF)
+	if err != nil {
+		return fmt.Errorf("failed to read band PDF %s: %w", bandPDF, err)
+	}
+	return c.StampBandBytes(data, placement, multi)
+}
+
+// WatermarkBytes stamps a single-page PDF byte slice across every page.
+func (c *Composer) WatermarkBytes(watermarkBytes []byte, opacity float64, onTop bool) error {
 	opacity = math.Min(math.Max(opacity, 0), 1)
 
 	desc := fmt.Sprintf("pos:c, scale:1.0 abs, rot:0, op:%.2f", opacity)
-	wm, err := api.PDFWatermark(watermarkPDFPath, desc, onTop, false, types.POINTS)
+	wm, err := api.PDFWatermark("watermark.pdf", desc, onTop, false, types.POINTS)
 	if err != nil {
 		return fmt.Errorf("failed to create watermark: %w", err)
 	}
+	wm.PDF = bytes.NewReader(watermarkBytes)
 
-	// A nil page set means every page.
 	if err := pdfcpu.AddWatermarks(c.ctx, nil, wm); err != nil {
 		return fmt.Errorf("failed to apply watermark: %w", err)
 	}
 	return nil
+}
+
+// Watermark stamps a single-page PDF across every page.
+func (c *Composer) Watermark(watermarkPDFPath string, opacity float64, onTop bool) error {
+	data, err := os.ReadFile(watermarkPDFPath)
+	if err != nil {
+		return fmt.Errorf("failed to read watermark PDF %s: %w", watermarkPDFPath, err)
+	}
+	return c.WatermarkBytes(data, opacity, onTop)
 }
 
 // SetMetadata writes document properties. Empty values are ignored.
@@ -118,7 +139,15 @@ func (c *Composer) SetMetadata(meta map[string]string) error {
 	return nil
 }
 
-// WriteFile serialises the composed document exactly once.
+// Write serialises the composed document to an io.Writer.
+func (c *Composer) Write(w io.Writer) error {
+	if err := api.WriteContext(c.ctx, w); err != nil {
+		return fmt.Errorf("failed to write PDF: %w", err)
+	}
+	return nil
+}
+
+// WriteFile serialises the composed document exactly once to a file.
 func (c *Composer) WriteFile(outPath string) error {
 	if err := api.WriteContextFile(c.ctx, outPath); err != nil {
 		return fmt.Errorf("failed to write %s: %w", outPath, err)
@@ -126,13 +155,36 @@ func (c *Composer) WriteFile(outPath string) error {
 	return nil
 }
 
+// GetPDFPageCountFromBytes returns total page count from a PDF byte slice.
+func GetPDFPageCountFromBytes(data []byte) (int, error) {
+	conf := defaultConf()
+	ctx, err := api.ReadContext(bytes.NewReader(data), conf)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse PDF: %w", err)
+	}
+	if err := ctx.EnsurePageCount(); err != nil {
+		return 0, fmt.Errorf("failed to count pages: %w", err)
+	}
+	return ctx.PageCount, nil
+}
+
 // GetPDFPageCount returns the total number of pages in the given PDF file.
 func GetPDFPageCount(pdfPath string) (int, error) {
-	count, err := api.PageCountFile(pdfPath)
+	f, err := os.Open(pdfPath)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get page count from %s: %w", pdfPath, err)
+		return 0, fmt.Errorf("failed to open %s: %w", pdfPath, err)
 	}
-	return count, nil
+	defer f.Close()
+
+	conf := defaultConf()
+	ctx, err := api.ReadContext(f, conf)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read %s: %w", pdfPath, err)
+	}
+	if err := ctx.EnsurePageCount(); err != nil {
+		return 0, fmt.Errorf("failed to count pages: %w", err)
+	}
+	return ctx.PageCount, nil
 }
 
 // StampPlacement describes where a stamp PDF is anchored on the target page.
