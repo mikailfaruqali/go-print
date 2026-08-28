@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -77,6 +78,15 @@ func NewChromeRenderer(chromePath string, quiet bool) (*ChromeRenderer, error) {
 		chromedp.Flag("disable-backgrounding-occluded-windows", true),
 		chromedp.Flag("disable-renderer-backgrounding", true),
 		chromedp.Flag("run-all-compositor-stages-before-draw", true),
+		// Printing never rasterises to the screen, so the tile/raster machinery
+		// is overhead on a long paginated document.
+		chromedp.Flag("disable-software-rasterizer", true),
+		chromedp.Flag("disable-lcd-text", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("disable-hang-monitor", true),
+		chromedp.Flag("disable-back-forward-cache", true),
+		chromedp.Flag("disable-logging", true),
+		chromedp.Flag("log-level", "3"),
 	)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
@@ -266,8 +276,39 @@ func (cr *ChromeRenderer) RenderHTMLToPDF(htmlContent string, outputPath string,
 
 // RenderHTMLToPDFBytes renders an HTML string and returns the PDF bytes.
 func (cr *ChromeRenderer) RenderHTMLToPDFBytes(htmlContent string, opts RenderOptions) ([]byte, error) {
+	buf, _, err := cr.renderPDF(htmlContent, opts, nil)
+	return buf, err
+}
+
+// RenderHTMLToPDFBytesCounted renders an HTML string and, as soon as Chrome has
+// laid the document out, reports the printed page count on pageCount before the
+// (much slower) serialisation of every page finishes.
+//
+// That early signal is what lets header/footer rendering - which needs the total
+// page count - overlap with the content print instead of waiting for it.
+func (cr *ChromeRenderer) RenderHTMLToPDFBytesCounted(htmlContent string, opts RenderOptions, pageCount chan<- int) ([]byte, error) {
+	buf, _, err := cr.renderPDF(htmlContent, opts, pageCount)
+	return buf, err
+}
+
+func (cr *ChromeRenderer) renderPDF(htmlContent string, opts RenderOptions, pageCount chan<- int) ([]byte, int, error) {
+	// Whatever happens, never leave a waiting band render blocked on a count
+	// that is no longer coming.
+	counted := false
+	emit := func(n int) {
+		if pageCount != nil && !counted {
+			counted = true
+			pageCount <- n
+		}
+	}
+	defer func() {
+		if pageCount != nil && !counted {
+			close(pageCount)
+		}
+	}()
+
 	if err := cr.ensureBrowser(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	timeout := opts.Timeout
@@ -276,7 +317,7 @@ func (cr *ChromeRenderer) RenderHTMLToPDFBytes(htmlContent string, opts RenderOp
 	}
 
 	if err := cr.ensureServer(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	navURL := cr.server.register(htmlContent, opts.BaseDir)
 
@@ -294,6 +335,7 @@ func (cr *ChromeRenderer) RenderHTMLToPDFBytes(htmlContent string, opts RenderOp
 	}
 
 	var pdfBuf []byte
+	var nPages int
 	err := chromedp.Run(ctx,
 		// Emulate the print media type so @media print rules apply, matching
 		// what users expect from wkhtmltopdf.
@@ -326,6 +368,9 @@ func (cr *ChromeRenderer) RenderHTMLToPDFBytes(htmlContent string, opts RenderOp
 			}
 			if stream == "" {
 				pdfBuf = data
+				n, _ := countPDFPages(data)
+				nPages = n
+				emit(n)
 				return nil
 			}
 			defer cdpio.Close(stream).Do(ctx)
@@ -335,17 +380,39 @@ func (cr *ChromeRenderer) RenderHTMLToPDFBytes(htmlContent string, opts RenderOp
 				return err
 			}
 			pdfBuf = out
+			// Chrome writes /Type/Page objects as it goes, so a cheap scan of the
+			// finished bytes beats a full pdfcpu parse for the count the bands need.
+			n, err := countPDFPages(out)
+			if err != nil {
+				return err
+			}
+			nPages = n
+			emit(n)
 			return nil
 		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("chromedp render error: %w", err)
+		return nil, 0, fmt.Errorf("chromedp render error: %w", err)
 	}
 	if len(pdfBuf) == 0 {
-		return nil, fmt.Errorf("chrome produced an empty PDF")
+		return nil, 0, fmt.Errorf("chrome produced an empty PDF")
 	}
 
-	return pdfBuf, nil
+	return pdfBuf, nPages, nil
+}
+
+// pageObjRe matches the page objects Chrome emits, e.g. "/Type /Page" but not
+// "/Type /Pages". Chrome's PDF output is uncompressed at the object level for
+// these dictionaries, so counting them is exact and far cheaper than a full parse.
+var pageObjRe = regexp.MustCompile(`/Type\s*/Page[^s]`)
+
+// countPDFPages counts pages by scanning for page objects, falling back to a
+// full parse if the scan finds nothing (a differently-encoded producer).
+func countPDFPages(data []byte) (int, error) {
+	if n := len(pageObjRe.FindAll(data, -1)); n > 0 {
+		return n, nil
+	}
+	return GetPDFPageCountFromBytes(data)
 }
 
 // readStream drains a CDP IO stream. The generated ReadParams.Do drops the

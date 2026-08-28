@@ -158,46 +158,6 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 		return nil, 0, err
 	}
 
-	// 1. Render content first with full browser focus
-	j.logf("Rendering content... ")
-	var contentBytes []byte
-	err := j.step("render content", func() error {
-		var e error
-		contentBytes, e = j.renderer.RenderHTMLToPDFBytes(contentHTML, RenderOptions{
-			PaperWidthInches:   g.paperWidth,
-			PaperHeightInches:  g.paperHeight,
-			MarginTopInches:    contentTop,
-			MarginBottomInches: contentBottom,
-			MarginLeftInches:   g.marginLeft,
-			MarginRightInches:  g.marginRight,
-			Landscape:          g.landscape,
-			Scale:              j.cfg.scale,
-			PreferCSSPageSize:  j.cfg.preferCSSPageSize,
-			BaseDir:            j.baseDir,
-			Timeout:            j.timeout(),
-		})
-		return e
-	})
-	if err != nil {
-		j.logf("failed\n")
-		return nil, 0, fmt.Errorf("failed to render content: %w", err)
-	}
-	j.logf("done\n")
-
-	// Everything below runs against one in-memory document: load once, stamp
-	// header/footer/watermark, set metadata, write once.
-	var comp *Composer
-	if err := j.step("load pdf", func() error {
-		var e error
-		comp, e = NewComposerFromBytes(contentBytes)
-		return e
-	}); err != nil {
-		return nil, 0, err
-	}
-	totalPages := comp.PageCount()
-
-	// 2. Render and Stamp Bands
-	// 2. Render Header, Footer, and Watermark in parallel tabs
 	var (
 		headerBand, footerBand *band
 		wmBytes                []byte
@@ -212,6 +172,8 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 		mu.Unlock()
 	}
 
+	// The watermark depends on nothing, so it renders alongside the content
+	// instead of waiting its turn behind it.
 	if watermarkHTML != "" {
 		bandsWg.Add(1)
 		go func() {
@@ -233,46 +195,122 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 		}()
 	}
 
-	if headerHTML != "" {
+	// Header and footer need the page count, which the content render publishes
+	// as soon as Chrome has laid the document out - well before the composed
+	// bytes are parsed. Waiting on that channel rather than on the parsed
+	// document overlaps both band renders with the content serialisation.
+	pageCountCh := make(chan int, 1)
+	bandTotals := make(chan int, 2)
+
+	startBand := func(html string, spec bandSpec) {
+		if html == "" {
+			return
+		}
 		bandsWg.Add(1)
 		go func() {
 			defer bandsWg.Done()
-			b, err := j.renderBand(headerHTML, totalPages, bandSpec{
-				name:      "header",
-				height:    g.headerHeight,
-				placement: StampPlacement{Pos: "tc", OffsetY: -InchesToPoints(g.headerOffset)},
-				fallback:  1.0,
-			})
+			total, ok := <-bandTotals
+			if !ok {
+				return // content render failed; its error is the one that matters
+			}
+			b, err := j.renderBand(html, total, spec)
 			if err != nil {
 				fail(err)
 				return
 			}
-			headerBand = b
+			mu.Lock()
+			if spec.name == "header" {
+				headerBand = b
+			} else {
+				footerBand = b
+			}
+			mu.Unlock()
 		}()
 	}
 
-	if footerHTML != "" {
-		bandsWg.Add(1)
-		go func() {
-			defer bandsWg.Done()
-			b, err := j.renderBand(footerHTML, totalPages, bandSpec{
-				name:      "footer",
-				height:    g.footerHeight,
-				placement: StampPlacement{Pos: "bc", OffsetY: InchesToPoints(g.footerOffset)},
-				fallback:  0.6,
-			})
-			if err != nil {
-				fail(err)
-				return
-			}
-			footerBand = b
-		}()
+	headerSpec := bandSpec{
+		name:      "header",
+		height:    g.headerHeight,
+		placement: StampPlacement{Pos: "tc", OffsetY: -InchesToPoints(g.headerOffset)},
+		fallback:  1.0,
 	}
+	footerSpec := bandSpec{
+		name:      "footer",
+		height:    g.footerHeight,
+		placement: StampPlacement{Pos: "bc", OffsetY: InchesToPoints(g.footerOffset)},
+		fallback:  0.6,
+	}
+
+	// Header and footer stay separate renders. Combining them into one document
+	// is measurably faster, but it forces two independently-authored stylesheets
+	// to share a page, which changes how the bands look - and the whole point of
+	// a band template is that it renders exactly as its author wrote it.
+	startBand(headerHTML, headerSpec)
+	startBand(footerHTML, footerSpec)
+
+	// Fan the single count out to both band goroutines.
+	go func() {
+		if n, ok := <-pageCountCh; ok {
+			bandTotals <- n
+			bandTotals <- n
+		}
+		close(bandTotals)
+	}()
+
+	// 1. Render content with full browser focus.
+	j.logf("Rendering content... ")
+	var contentBytes []byte
+	err := j.step("render content", func() error {
+		var e error
+		contentBytes, e = j.renderer.RenderHTMLToPDFBytesCounted(contentHTML, RenderOptions{
+			PaperWidthInches:   g.paperWidth,
+			PaperHeightInches:  g.paperHeight,
+			MarginTopInches:    contentTop,
+			MarginBottomInches: contentBottom,
+			MarginLeftInches:   g.marginLeft,
+			MarginRightInches:  g.marginRight,
+			Landscape:          g.landscape,
+			Scale:              j.cfg.scale,
+			PreferCSSPageSize:  j.cfg.preferCSSPageSize,
+			BaseDir:            j.baseDir,
+			Timeout:            j.timeout(),
+		}, pageCountCh)
+		return e
+	})
+	if err != nil {
+		j.logf("failed\n")
+		bandsWg.Wait()
+		return nil, 0, fmt.Errorf("failed to render content: %w", err)
+	}
+	j.logf("done\n")
+
+	// Everything below runs against one in-memory document: load once, stamp
+	// header/footer/watermark, set metadata, write once. This parse overlaps the
+	// band renders still finishing in the background.
+	var comp *Composer
+	if err := j.step("load pdf", func() error {
+		var e error
+		comp, e = NewComposerFromBytes(contentBytes)
+		return e
+	}); err != nil {
+		bandsWg.Wait()
+		return nil, 0, err
+	}
+	totalPages := comp.PageCount()
 
 	bandsWg.Wait()
 
 	if len(errs) > 0 {
 		return nil, 0, errs[0]
+	}
+
+	// The bands were built from the count published mid-render; confirm it
+	// against the parsed document before stamping anything.
+	for _, b := range []*band{headerBand, footerBand} {
+		if b != nil && b.multi && b.pages != totalPages {
+			return nil, 0, fmt.Errorf("%s produced %d pages for a %d page document; reduce the %s content or increase --%s-height",
+				b.spec.name, b.pages, totalPages, b.spec.name, b.spec.name)
+		}
 	}
 
 	for _, b := range []*band{headerBand, footerBand} {
@@ -379,6 +417,7 @@ html,body{margin:0;padding:0}
 	return sb.String()
 }
 
+
 type bandSpec struct {
 	name      string
 	height    float64
@@ -391,6 +430,7 @@ type band struct {
 	spec  bandSpec
 	data  []byte
 	multi bool // true when data holds one page per document page
+	pages int  // pages actually produced, when multi
 }
 
 // renderBand renders a header or footer to PDF bytes in exactly one Chrome call.
@@ -434,11 +474,13 @@ func (j *job) renderBand(templateHTML string, totalPages int, spec bandSpec) (*b
 		return nil, fmt.Errorf("failed to render %s: %w", spec.name, err)
 	}
 
+	pages := 0
 	if multi {
-		got, err := GetPDFPageCountFromBytes(data)
+		got, err := countPDFPages(data)
 		if err != nil {
 			return nil, err
 		}
+		pages = got
 		if got != totalPages {
 			// Content taller than the band can push a block onto an extra page,
 			// which would misalign every page number after it.
@@ -448,5 +490,5 @@ func (j *job) renderBand(templateHTML string, totalPages int, spec bandSpec) (*b
 	}
 	j.logf("Rendering %s (%s)... done\n", spec.name, note)
 
-	return &band{spec: spec, data: data, multi: multi}, nil
+	return &band{spec: spec, data: data, multi: multi, pages: pages}, nil
 }
