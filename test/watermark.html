@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+      font-family: Arial, Tahoma, sans-serif;
+    }
+    .watermark-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    /* Logo in the center */
+    .center-logo {
+      width: 380px;
+      height: 380px;
+      opacity: 0.05;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .center-logo svg {
+      width: 100%;
+      height: 100%;
+    }
+    /* Draft text in separate position */
+    .draft-badge {
+      position: absolute;
+      top: 140px;
+      right: 40px;
+      font-size: 26px;
+      font-weight: 800;
+      color: rgba(220, 38, 38, 0.08);
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      border: 3px solid rgba(220, 38, 38, 0.08);
+      padding: 6px 18px;
+      border-radius: 6px;
+      transform: rotate(-15deg);
+    }
+  </style>
+</head>
+<body>
+  <div class="watermark-container">
+    <div class="draft-badge">DRAFT COPY</div>
+    <div class="center-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="#0f172a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="50" cy="50" r="44" stroke-width="5" />
+        <path d="M25 30 L50 50 L25 70" stroke-width="6" />
+        <path d="M50 30 L75 50 L50 70" stroke-width="6" />
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @font-face {
+      font-family: 'NRT';
+      src: local('NRT-Reg'), local('NRT-Bold'), local('NRT'), local('Unikurd Jano'), local('Arial');
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 25mm;
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: 'NRT', 'Segoe UI', Arial, sans-serif;
+      overflow: hidden;
+    }
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 25mm;
+      padding: 0 10mm;
+    }
+    .left-section {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo-img {
+      width: 36px;
+      height: 36px;
+      display: block;
+    }
+    .company-info h2 {
+      margin: 0;
+      font-size: 14.5px;
+      font-weight: 700;
+      color: #ffffff;
+      letter-spacing: 0.8px;
+    }
+    .company-info span {
+      font-size: 10.5px;
+      color: #94a3b8;
+      display: block;
+    }
+    .right-section {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+      padding: 4px 12px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #38bdf8;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header-container">
+    <div class="left-section">
+      <img class="logo-img" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA0OCA0OCI+PGRlZnM+PGxpbmVhckdyYWRpZW50IGlkPSJnIiB4MT0iMCIgeTE9IjAiIHgyPSIxIiB5Mj0iMSI+PHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzM4YmRmOCIvPjxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzI1NjNlYiIvPjwvbGluZWFyR3JhZGllbnQ+PC9kZWZzPjxyZWN0IHdpZHRoPSI0OCIgaGVpZ2h0PSI0OCIgcng9IjgiIGZpbGw9InVybCgjZykiLz48cGF0aCBkPSJNMTIgMTRMMjQgMjRMMTIgMzRNMjQgMTRMMzYgMjRMMjQgMzQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48L3N2Zz4=" alt="Logo" />
+      <div class="company-info">
+        <h2>VERTEX GLOBAL ENTERPRISES</h2>
+        <span>Advanced IT Solutions & Infrastructure</span>
+      </div>
+    </div>
+    <div class="right-section">
+      Page {pageNumber} of {totalPages}
+    </div>
+  </div>
+</body>
+</html>
