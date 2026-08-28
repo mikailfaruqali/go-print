@@ -32,6 +32,8 @@ for /f %%T in ('powershell -NoProfile -Command "[DateTimeOffset]::UtcNow.ToUnixT
   --margin 5mm ^
   --header-height 25mm ^
   --footer-height 15mm ^
+  --header-spacing 8mm ^
+  --footer-spacing 0 ^
   --title "snpdf test document" ^
   --orientation portrait
 
