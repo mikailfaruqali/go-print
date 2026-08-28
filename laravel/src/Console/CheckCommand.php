@@ -19,13 +19,13 @@ use function Laravel\Prompts\table;
 
 class CheckCommand extends Command
 {
-    protected $signature = 'snpdf:check';
+    protected $signature = 'pdf:check';
 
-    protected $description = 'Verify that the snpdf binary and headless Chrome/Chromium are installed and working';
+    protected $description = 'Verify that the pdf binary and headless Chrome/Chromium are installed and working';
 
     public function handle(): int
     {
-        intro('Checking snpdf Requirements & Environment');
+        intro('Checking pdf Requirements & Environment');
 
         $binaryResult = $this->checkPdfBinary();
         $chromeResult = $this->checkChromeInstallation();
@@ -33,20 +33,20 @@ class CheckCommand extends Command
         table(
             headers: ['Component', 'Status', 'Details'],
             rows: [
-                ['snpdf Binary', $binaryResult['ok'] ? '✓ OK' : '✗ Failed', $binaryResult['details']],
+                ['pdf Binary', $binaryResult['ok'] ? '✓ OK' : '✗ Failed', $binaryResult['details']],
                 ['Chrome / Chromium', $chromeResult['ok'] ? '✓ OK' : '✗ Failed', $chromeResult['details']],
             ]
         );
 
         if ($binaryResult['ok'] && $chromeResult['ok']) {
-            outro('✓ All systems operational! snpdf is ready to generate PDFs.');
+            outro('✓ All systems operational! pdf is ready to generate PDFs.');
 
             return self::SUCCESS;
         }
 
         error('✗ One or more checks failed. Please review the table above.');
         if (! $binaryResult['ok']) {
-            note('Run php artisan snpdf:install to install the binary automatically.');
+            note('Run php artisan pdf:install to install the binary automatically.');
         }
 
         return self::FAILURE;

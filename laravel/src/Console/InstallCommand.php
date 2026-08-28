@@ -23,15 +23,15 @@ use function Laravel\Prompts\warning;
 
 class InstallCommand extends Command
 {
-    protected $signature = 'snpdf:install
+    protected $signature = 'pdf:install
                             {--force : Force download and overwrite existing binary}
                             {--tag=latest : GitHub release tag to download}';
 
-    protected $description = 'Download and install the snpdf binary for your operating system and architecture';
+    protected $description = 'Download and install the pdf binary for your operating system and architecture';
 
     public function handle(): int
     {
-        intro('Installing snpdf Binary');
+        intro('Installing pdf Binary');
 
         $os = $this->detectOs();
         $arch = $this->detectArch();
@@ -39,10 +39,10 @@ class InstallCommand extends Command
         note("Environment detected: {$os} ({$arch})");
 
         $isWindows = $os === 'windows';
-        $binaryFileName = $isWindows ? 'snpdf.exe' : 'snpdf';
+        $binaryFileName = $isWindows ? 'pdf.exe' : 'pdf';
         $archiveExtension = $isWindows ? '.zip' : '.tar.gz';
 
-        $destinationDirectory = storage_path('snpdf');
+        $destinationDirectory = storage_path('pdf');
         $targetBinaryPath = $destinationDirectory . DIRECTORY_SEPARATOR . $binaryFileName;
 
         if (File::exists($targetBinaryPath) && ! $this->option('force')) {
@@ -55,7 +55,7 @@ class InstallCommand extends Command
 
             if (! $overwrite) {
                 $this->verifyBinary($targetBinaryPath);
-                outro('snpdf installation skipped.');
+                outro('pdf installation skipped.');
 
                 return self::SUCCESS;
             }
@@ -79,19 +79,19 @@ class InstallCommand extends Command
             return self::FAILURE;
         }
 
-        $tempArchive = tempnam(sys_get_temp_dir(), 'snpdf_download_') . $archiveExtension;
+        $tempArchive = tempnam(sys_get_temp_dir(), 'pdf_download_') . $archiveExtension;
 
         try {
             $downloaded = spin(
                 function () use ($downloadUrl, $tempArchive) {
                     $response = Http::timeout(60)
-                        ->withHeaders(['User-Agent' => 'Snawbar-SNPDF-Laravel-Installer'])
+                        ->withHeaders(['User-Agent' => 'MikailFaruqAli-PDF-Laravel-Installer'])
                         ->sink($tempArchive)
                         ->get($downloadUrl);
 
                     return $response->successful();
                 },
-                'Downloading snpdf binary...'
+                'Downloading pdf binary...'
             );
 
             if (! $downloaded) {
@@ -115,7 +115,7 @@ class InstallCommand extends Command
 
             $this->verifyBinary($targetBinaryPath);
 
-            outro('snpdf installation completed successfully!');
+            outro('pdf installation completed successfully!');
 
             return self::SUCCESS;
         } catch (Throwable $throwable) {
@@ -155,11 +155,11 @@ class InstallCommand extends Command
     private function resolveDownloadUrl(string $os, string $arch, string $extension, string $tag): ?string
     {
         $apiUrl = $tag === 'latest'
-            ? 'https://api.github.com/repos/snawbar/snpdf/releases/latest'
-            : "https://api.github.com/repos/snawbar/snpdf/releases/tags/{$tag}";
+            ? 'https://api.github.com/repos/mikailfaruqali/go-print/releases/latest'
+            : "https://api.github.com/repos/mikailfaruqali/go-print/releases/tags/{$tag}";
 
         $response = Http::withHeaders([
-            'User-Agent' => 'Snawbar-SNPDF-Laravel-Installer',
+            'User-Agent' => 'MikailFaruqAli-PDF-Laravel-Installer',
             'Accept' => 'application/vnd.github.v3+json',
         ])->get($apiUrl);
 
@@ -177,7 +177,7 @@ class InstallCommand extends Command
 
         $releaseTag = $tag === 'latest' ? 'v1.0.0' : $tag;
 
-        return "https://github.com/snawbar/snpdf/releases/download/{$releaseTag}/snpdf_{$os}_{$arch}{$extension}";
+        return "https://github.com/mikailfaruqali/go-print/releases/download/{$releaseTag}/pdf_{$os}_{$arch}{$extension}";
     }
 
     private function extractBinary(string $archivePath, string $destinationDir, bool $isWindows, string $binaryName): void
@@ -208,7 +208,7 @@ class InstallCommand extends Command
 
         if ($process->isSuccessful()) {
             $versionOutput = trim($process->getOutput());
-            note("snpdf version: {$versionOutput}");
+            note("pdf version: {$versionOutput}");
         } else {
             warning("Could not execute '{$binaryPath} --version': " . trim($process->getErrorOutput()));
         }

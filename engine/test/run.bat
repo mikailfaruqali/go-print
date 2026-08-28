@@ -9,11 +9,13 @@ rem Resolve paths from this script's own location so the test works no matter
 rem which directory it is launched from.
 set "ROOT=%~dp0.."
 
-if exist "%ROOT%\snpdf.exe" (
+if exist "%ROOT%\pdf.exe" (
+    set "BIN=%ROOT%\pdf.exe"
+) else if exist "%ROOT%\snpdf.exe" (
     set "BIN=%ROOT%\snpdf.exe"
 ) else (
-    echo Error: snpdf.exe not found in %ROOT%. Please build it first:
-    echo   go build -ldflags="-s -w" -o snpdf.exe .
+    echo Error: pdf.exe not found in %ROOT%. Please build it first:
+    echo   go build -ldflags="-s -w" -o pdf.exe .
     exit /b 1
 )
 
