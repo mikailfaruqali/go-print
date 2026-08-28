@@ -178,3 +178,4 @@ func TestContentInsetUsesMaxNotSum(t *testing.T) {
 		t.Error("content top inset still sums margin and header height")
 	}
 }
+

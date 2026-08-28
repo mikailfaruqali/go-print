@@ -158,19 +158,6 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 		return nil, 0, err
 	}
 
-	var (
-		headerBand, footerBand *band
-		wmBytes                []byte
-		errs                   []error
-		mu                     sync.Mutex
-	)
-
-	fail := func(err error) {
-		mu.Lock()
-		errs = append(errs, err)
-		mu.Unlock()
-	}
-
 	// 1. Render content first with full browser focus
 	j.logf("Rendering content... ")
 	var contentBytes []byte
@@ -209,8 +196,22 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 	}
 	totalPages := comp.PageCount()
 
+	// 2. Render and Stamp Bands
 	// 2. Render Header, Footer, and Watermark in parallel tabs
-	var bandsWg sync.WaitGroup
+	var (
+		headerBand, footerBand *band
+		wmBytes                []byte
+		errs                   []error
+		mu                     sync.Mutex
+		bandsWg                sync.WaitGroup
+	)
+
+	fail := func(err error) {
+		mu.Lock()
+		errs = append(errs, err)
+		mu.Unlock()
+	}
+
 	if watermarkHTML != "" {
 		bandsWg.Add(1)
 		go func() {
