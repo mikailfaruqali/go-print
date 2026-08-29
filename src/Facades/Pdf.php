@@ -11,6 +11,9 @@ use PDF\Pdf as PdfBuilder;
 
 /**
  * @method static PdfBuilder make()
+ * @method static PdfBuilder view(string $view, array $data = [], array $mergeData = [], ?string $locale = null, ?string $fallbackView = null)
+ * @method static PdfBuilder loadTemplate(string $view, ?string $locale = null, ?string $fallbackView = null)
+ * @method static PdfBuilder applyTemplateOptions(array $options)
  * @method static PdfBuilder content(Renderable|string $html)
  * @method static PdfBuilder header(Renderable|string $html)
  * @method static PdfBuilder footer(Renderable|string $html)

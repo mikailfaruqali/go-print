@@ -8,6 +8,7 @@ use Illuminate\Contracts\Support\Renderable;
 use Illuminate\Http\Response;
 use Illuminate\Support\Traits\Conditionable;
 use PDF\Exceptions\PdfException;
+use PDF\Models\PdfTemplate;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -74,13 +75,13 @@ class Pdf
 
     private bool $quiet = TRUE;
 
-    private ?int $timeout = 120;
+    private ?int $timeout;
 
-    private ?string $chromePath = NULL;
+    private ?string $chromePath;
 
-    private ?string $binaryPath = NULL;
+    private ?string $binaryPath;
 
-    private ?string $tempDirectory = NULL;
+    private ?string $tempDirectory;
 
     private bool $withViewer = FALSE;
 
@@ -104,6 +105,219 @@ class Pdf
     public static function make(): self
     {
         return new self;
+    }
+
+    /**
+     * Load a Blade view and automatically apply any custom template options configured for it.
+     *
+     * @param  string  $view  View name (e.g. 'invoices.show')
+     * @param  array<string, mixed>  $data  View data array
+    /**
+     * Load a Blade view and automatically apply any custom template options configured for it.
+     * @param  string  $view  View name (e.g. 'invoices.show')
+     * @param  array<string, mixed>  $data  View data array
+     * @param  array<string, mixed>  $mergeData  Additional merge data
+     * @param  string|null  $locale  Specific locale (defaults to app()->getLocale())
+     * @param  string|null  $fallbackView  Optional fallback template view (e.g. '*' or 'pdf::default')
+     */
+    public function view(string $view, array $data = [], array $mergeData = [], ?string $locale = NULL, ?string $fallbackView = NULL): self
+    {
+        $this->loadTemplate($view, $locale, $fallbackView);
+
+        if (function_exists('view')) {
+            $this->content(view($view, $data, $mergeData));
+        }
+
+        return $this;
+    }
+
+    /**
+     * Load and apply template options for a given view name and locale from the database.
+     *
+     * @param  string  $view  Target view name
+     * @param  string|null  $locale  Target locale
+     * @param  string|null  $fallbackView  Optional fallback view name
+     */
+    public function loadTemplate(string $view, ?string $locale = NULL, ?string $fallbackView = NULL): self
+    {
+        try {
+            if (class_exists(PdfTemplate::class)) {
+                $options = PdfTemplate::resolveOptionsForView($view, $locale, $fallbackView);
+                if ($options !== []) {
+                    $this->applyTemplateOptions($options);
+                }
+            }
+        } catch (Throwable) {
+            // Silently proceed if database is unmigrated or unconfigured
+        }
+
+        return $this;
+    }
+
+    /**
+     * Apply an options associative array (from database JSON column or custom settings) to this PDF builder.
+     *
+     * @param  array<string, mixed>  $options
+     */
+    public function applyTemplateOptions(array $options): self
+    {
+        if (isset($options['contentHtml']) && trim((string) $options['contentHtml']) !== '') {
+            $this->content((string) $options['contentHtml']);
+        }
+
+        if (isset($options['headerHtml']) && trim((string) $options['headerHtml']) !== '') {
+            $this->header((string) $options['headerHtml']);
+        }
+
+        if (isset($options['footerHtml']) && trim((string) $options['footerHtml']) !== '') {
+            $this->footer((string) $options['footerHtml']);
+        }
+
+        if (isset($options['watermarkHtml']) && trim((string) $options['watermarkHtml']) !== '') {
+            $this->watermark((string) $options['watermarkHtml']);
+        }
+
+        if (isset($options['paper']) && trim((string) $options['paper']) !== '') {
+            $this->paper((string) $options['paper']);
+        }
+
+        if (isset($options['orientation']) && trim((string) $options['orientation']) !== '') {
+            $this->orientation((string) $options['orientation']);
+        }
+
+        if (isset($options['margin']) && trim((string) $options['margin']) !== '') {
+            $this->margin((string) $options['margin']);
+        }
+
+        if (isset($options['marginTop']) && trim((string) $options['marginTop']) !== '') {
+            $this->marginTop((string) $options['marginTop']);
+        }
+
+        if (isset($options['marginBottom']) && trim((string) $options['marginBottom']) !== '') {
+            $this->marginBottom((string) $options['marginBottom']);
+        }
+
+        if (isset($options['marginLeft']) && trim((string) $options['marginLeft']) !== '') {
+            $this->marginLeft((string) $options['marginLeft']);
+        }
+
+        if (isset($options['marginRight']) && trim((string) $options['marginRight']) !== '') {
+            $this->marginRight((string) $options['marginRight']);
+        }
+
+        if (isset($options['headerHeight']) && trim((string) $options['headerHeight']) !== '') {
+            $this->headerHeight((string) $options['headerHeight']);
+        }
+
+        if (isset($options['footerHeight']) && trim((string) $options['footerHeight']) !== '') {
+            $this->footerHeight((string) $options['footerHeight']);
+        }
+
+        if (isset($options['headerSpacing']) && trim((string) $options['headerSpacing']) !== '') {
+            $this->headerSpacing((string) $options['headerSpacing']);
+        }
+
+        if (isset($options['footerSpacing']) && trim((string) $options['footerSpacing']) !== '') {
+            $this->footerSpacing((string) $options['footerSpacing']);
+        }
+
+        if (isset($options['headerOffset']) && trim((string) $options['headerOffset']) !== '') {
+            $this->headerOffset((string) $options['headerOffset']);
+        }
+
+        if (isset($options['footerOffset']) && trim((string) $options['footerOffset']) !== '') {
+            $this->footerOffset((string) $options['footerOffset']);
+        }
+
+        if (isset($options['watermarkOpacity']) && is_numeric($options['watermarkOpacity'])) {
+            $this->watermarkOpacity((float) $options['watermarkOpacity']);
+        }
+
+        if (isset($options['watermarkBehind'])) {
+            $this->watermarkBehind(filter_var($options['watermarkBehind'], FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if (isset($options['scale']) && is_numeric($options['scale'])) {
+            $this->scale((float) $options['scale']);
+        }
+
+        if (isset($options['preferCssPageSize'])) {
+            $this->preferCssPageSize(filter_var($options['preferCssPageSize'], FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if (isset($options['pageOffset']) && is_numeric($options['pageOffset'])) {
+            $this->pageOffset((int) $options['pageOffset']);
+        }
+
+        if (isset($options['totalOffset']) && is_numeric($options['totalOffset'])) {
+            $this->totalOffset((int) $options['totalOffset']);
+        }
+
+        if (isset($options['title']) && trim((string) $options['title']) !== '') {
+            $this->title((string) $options['title']);
+        }
+
+        if (isset($options['author']) && trim((string) $options['author']) !== '') {
+            $this->author((string) $options['author']);
+        }
+
+        if (isset($options['subject']) && trim((string) $options['subject']) !== '') {
+            $this->subject((string) $options['subject']);
+        }
+
+        if (isset($options['keywords']) && trim((string) $options['keywords']) !== '') {
+            $this->keywords((string) $options['keywords']);
+        }
+
+        if (isset($options['baseUrl']) && trim((string) $options['baseUrl']) !== '') {
+            $this->baseUrl((string) $options['baseUrl']);
+        }
+
+        if (isset($options['quiet'])) {
+            $this->quiet(filter_var($options['quiet'], FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if (isset($options['timeout']) && is_numeric($options['timeout'])) {
+            $this->timeout((int) $options['timeout']);
+        }
+
+        if (isset($options['chromePath']) && trim((string) $options['chromePath']) !== '') {
+            $this->chromePath((string) $options['chromePath']);
+        }
+
+        if (isset($options['binaryPath']) && trim((string) $options['binaryPath']) !== '') {
+            $this->binaryPath((string) $options['binaryPath']);
+        }
+
+        if (isset($options['tempDirectory']) && trim((string) $options['tempDirectory']) !== '') {
+            $this->tempDirectory((string) $options['tempDirectory']);
+        }
+
+        if (isset($options['withViewer'])) {
+            $this->withViewer(filter_var($options['withViewer'], FILTER_VALIDATE_BOOLEAN));
+        }
+
+        if (isset($options['dir']) && trim((string) $options['dir']) !== '') {
+            $this->dir((string) $options['dir']);
+        }
+
+        if (isset($options['theme']) && trim((string) $options['theme']) !== '') {
+            $this->theme((string) $options['theme']);
+        }
+
+        if (isset($options['icon']) && trim((string) $options['icon']) !== '') {
+            $this->icon((string) $options['icon']);
+        }
+
+        if (isset($options['fontPath']) || isset($options['fontFamily']) || isset($options['fontStack'])) {
+            $this->font(
+                $options['fontPath'] ?? NULL,
+                $options['fontFamily'] ?? NULL,
+                $options['fontStack'] ?? NULL
+            );
+        }
+
+        return $this;
     }
 
     public function content(string|Renderable $html): self

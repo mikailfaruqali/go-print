@@ -47,4 +47,45 @@ return [
     |
     */
     'temp_path' => env('PDF_TEMP_PATH'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Template UI Routes Enabled
+    |--------------------------------------------------------------------------
+    |
+    | Enable or disable the template configuration routes at /pdf-templates.
+    |
+    */
+    'routes_enabled' => env('PDF_ROUTES_ENABLED', TRUE),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Template UI Route Prefix
+    |--------------------------------------------------------------------------
+    |
+    | The URI prefix for template studio management routes (default: pdf-templates).
+    |
+    */
+    'route_prefix' => env('PDF_ROUTE_PREFIX', 'pdf-templates'),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Template UI Route Middleware
+    |--------------------------------------------------------------------------
+    |
+    | Middleware stack to apply to the template management interface routes.
+    | You can pass strings or array of middleware (e.g. ['web', 'auth', 'can:manage-pdf-templates']).
+    |
+    */
+    'middleware' => ['web'],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Supported Template Locales
+    |--------------------------------------------------------------------------
+    |
+    | Locales available in the template management dropdown selector.
+    |
+    */
+    'locales' => ['*', 'en', 'ar', 'ckb', 'ku', 'fr', 'de', 'es', 'tr', 'fa'],
 ];

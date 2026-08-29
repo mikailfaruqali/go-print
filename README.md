@@ -201,10 +201,47 @@ return Pdf::make()
     ->inline('invoice.pdf');
 ```
 
+### Custom View Templates & UI Studio
+
+Configure custom print settings, page margins, orientation, headers, footers, watermarks, and viewer themes per Blade view and per locale.
+
+```php
+use PDF\Facades\Pdf;
+
+// Automatically loads template options saved for 'invoices.show' and the current locale (or '*' fallback)
+return Pdf::make()
+    ->view('invoices.show', ['invoice' => $invoice])
+    ->inline('invoice.pdf');
+```
+
+You can also explicitly load or apply options:
+
+```php
+Pdf::make()
+    ->loadTemplate('invoices.show', 'en')
+    ->content(view('invoices.show', $data))
+    ->download('invoice.pdf');
+```
+
+#### Template Studio UI (`/pdf-templates`)
+
+Manage templates with a visual editor matching the **sn-kit** design pattern (dark/light theme toggle, Select2 searchable views, real-time live preview):
+
+1. Run migrations:
+```bash
+php artisan migrate
+```
+2. Navigate to `http://your-app.test/pdf-templates` in your browser.
+
+---
+
 ### Full Fluent API Reference
 
 ```php
 Pdf::make()
+    ->view(string $view, array $data = [], array $mergeData = [], ?string $locale = null)
+    ->loadTemplate(string $view, ?string $locale = null)
+    ->applyTemplateOptions(array $options)
     ->content(string|Renderable $html)
     ->header(string|Renderable $html)
     ->footer(string|Renderable $html)
