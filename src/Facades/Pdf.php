@@ -12,8 +12,8 @@ use PDF\Pdf as PdfBuilder;
 /**
  * @method static PdfBuilder make()
  * @method static PdfBuilder view(string $view, array $data = [])
- * @method static PdfBuilder loadTemplate(string $view)
- * @method static PdfBuilder applyTemplateOptions(array $options)
+ * @method static PdfBuilder loadTemplate(string $view, array $data = [])
+ * @method static PdfBuilder applyTemplateOptions(array $options, array $data = [])
  * @method static PdfBuilder content(Renderable|string $html)
  * @method static PdfBuilder header(Renderable|string $html)
  * @method static PdfBuilder headerView(string $view, array $data = [])

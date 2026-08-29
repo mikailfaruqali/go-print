@@ -6,6 +6,7 @@ namespace PDF;
 
 use Illuminate\Contracts\Support\Renderable;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Traits\Conditionable;
 use PDF\Exceptions\PdfException;
 use PDF\Models\PdfTemplate;
@@ -75,7 +76,7 @@ class Pdf
 
     private bool $quiet = TRUE;
 
-    private ?int $timeout;
+    private ?int $timeout = 120;
 
     private ?string $chromePath;
 
@@ -109,23 +110,37 @@ class Pdf
 
     public function view(string $view, array $data = []): self
     {
-        if (function_exists('view')) {
+        $options = [];
+
+        try {
+            if (class_exists(PdfTemplate::class)) {
+                $locale = function_exists('app') ? app()->getLocale() : 'en';
+                $options = PdfTemplate::resolveOptionsForView($view, $locale);
+            }
+        } catch (Throwable) {
+        }
+
+        if (filled($options['contentHtml'] ?? NULL)) {
+            $this->content(Blade::render((string) $options['contentHtml'], $data));
+        } elseif (function_exists('view')) {
             $this->content(view($view, $data));
         }
 
-        $this->loadTemplate($view);
+        if (filled($options)) {
+            $this->applyTemplateOptions($options, $data);
+        }
 
         return $this;
     }
 
-    public function loadTemplate(string $view): self
+    public function loadTemplate(string $view, array $data = []): self
     {
         try {
             if (class_exists(PdfTemplate::class)) {
                 $locale = function_exists('app') ? app()->getLocale() : 'en';
                 $options = PdfTemplate::resolveOptionsForView($view, $locale);
                 if (filled($options)) {
-                    $this->applyTemplateOptions($options);
+                    $this->applyTemplateOptions($options, $data);
                 }
             }
         } catch (Throwable) {
@@ -134,22 +149,22 @@ class Pdf
         return $this;
     }
 
-    public function applyTemplateOptions(array $options): self
+    public function applyTemplateOptions(array $options, array $data = []): self
     {
         if (filled($options['contentHtml'] ?? NULL) && blank($this->contentHtml)) {
-            $this->content((string) $options['contentHtml']);
+            $this->content(Blade::render((string) $options['contentHtml'], $data));
         }
 
         if (filled($options['headerHtml'] ?? NULL) && blank($this->headerHtml)) {
-            $this->header((string) $options['headerHtml']);
+            $this->header(Blade::render((string) $options['headerHtml'], $data));
         }
 
         if (filled($options['footerHtml'] ?? NULL) && blank($this->footerHtml)) {
-            $this->footer((string) $options['footerHtml']);
+            $this->footer(Blade::render((string) $options['footerHtml'], $data));
         }
 
         if (filled($options['watermarkHtml'] ?? NULL) && blank($this->watermarkHtml)) {
-            $this->watermark((string) $options['watermarkHtml']);
+            $this->watermark(Blade::render((string) $options['watermarkHtml'], $data));
         }
 
         if (filled($options['paper'] ?? NULL) && blank($this->paper)) {
