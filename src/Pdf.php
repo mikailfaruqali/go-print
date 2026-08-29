@@ -21,7 +21,6 @@ class Pdf
 
     public const DEFAULT_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3CradialGradient id='sg' cx='30%25' cy='30%25' r='70%25'%3E%3Cstop offset='0%25' stop-color='%232ecc71'/%3E%3Cstop offset='40%25' stop-color='%23249658'/%3E%3Cstop offset='100%25' stop-color='%231a6b3f'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect x='4' y='4' width='92' height='92' rx='8' fill='url(%23sg)'/%3E%3Cg fill='%23fff' transform='translate(28,28)'%3E%3Crect x='0' y='0' width='19' height='19' rx='2'/%3E%3Crect x='23' y='0' width='19' height='19' rx='2'/%3E%3Crect x='0' y='23' width='19' height='19' rx='2'/%3E%3Crect x='23' y='23' width='19' height='19' rx='2'/%3E%3C/g%3E%3C/svg%3E";
 
-    /** Options whose value is a Blade template rendered with the caller's data. */
     private const BLADE_OPTIONS = [
         'contentHtml' => 'content',
         'headerHtml' => 'header',
@@ -159,6 +158,10 @@ class Pdf
 
     private ?string $icon;
 
+    private array $templateOptions = [];
+
+    private array $templateData = [];
+
     public function __construct()
     {
         $this->initializeDefaults();
@@ -172,64 +175,35 @@ class Pdf
     public function view(string $view, array $data = []): self
     {
         $options = $this->resolveTemplateOptions($view);
+        $this->templateOptions = $options;
+        $this->templateData = $data;
 
         if (blank($options['contentHtml'] ?? NULL) && function_exists('view')) {
             $this->content(view($view, $data));
         }
 
-        return $this->applyTemplateOptions($options, $data);
+        $this->applyResolvedOptions($options, $data);
+
+        return $this;
     }
 
     public function loadTemplate(string $view, array $data = []): self
     {
-        return $this->applyTemplateOptions($this->resolveTemplateOptions($view), $data);
+        $options = $this->resolveTemplateOptions($view);
+        $this->templateOptions = $options;
+        $this->templateData = $data;
+
+        $this->applyResolvedOptions($options, $data);
+
+        return $this;
     }
 
-    /**
-     * Apply stored template options.
-     *
-     * Database records take priority: whenever an option is present and not null
-     * it overrides whatever was previously set fluently on this instance.
-     */
     public function applyTemplateOptions(array $options, array $data = []): self
     {
-        foreach (self::BLADE_OPTIONS as $key => $method) {
-            if (filled($options[$key] ?? NULL)) {
-                $this->{$method}($this->renderBlade((string) $options[$key], $data));
-            }
-        }
+        $this->templateOptions = array_merge($this->templateOptions, $options);
+        $this->templateData = array_merge($this->templateData, $data);
 
-        foreach (self::STRING_OPTIONS as $key => $method) {
-            if (filled($options[$key] ?? NULL)) {
-                $this->{$method}((string) $options[$key]);
-            }
-        }
-
-        foreach (self::FLOAT_OPTIONS as $key => $method) {
-            if (isset($options[$key]) && is_numeric($options[$key])) {
-                $this->{$method}((float) $options[$key]);
-            }
-        }
-
-        foreach (self::INT_OPTIONS as $key => $method) {
-            if (isset($options[$key]) && is_numeric($options[$key])) {
-                $this->{$method}((int) $options[$key]);
-            }
-        }
-
-        foreach (self::BOOL_OPTIONS as $key => $method) {
-            if (isset($options[$key])) {
-                $this->{$method}(filter_var($options[$key], FILTER_VALIDATE_BOOLEAN));
-            }
-        }
-
-        if (filled($options['fontPath'] ?? NULL) || filled($options['fontFamily'] ?? NULL) || filled($options['fontStack'] ?? NULL)) {
-            $this->font(
-                filled($options['fontPath'] ?? NULL) ? (string) $options['fontPath'] : $this->fontPath,
-                filled($options['fontFamily'] ?? NULL) ? (string) $options['fontFamily'] : $this->fontFamily,
-                filled($options['fontStack'] ?? NULL) ? (string) $options['fontStack'] : $this->fontStack,
-            );
-        }
+        $this->applyResolvedOptions($options, $data);
 
         return $this;
     }
@@ -737,6 +711,47 @@ class Pdf
         throw PdfException::binaryNotFound($this->binaryPath ?? 'storage/pdf/pdf or system PATH');
     }
 
+    private function applyResolvedOptions(array $options, array $data = []): void
+    {
+        foreach (self::BLADE_OPTIONS as $key => $method) {
+            if (filled($options[$key] ?? NULL)) {
+                $this->{$method}($this->renderBlade((string) $options[$key], $data));
+            }
+        }
+
+        foreach (self::STRING_OPTIONS as $key => $method) {
+            if (filled($options[$key] ?? NULL)) {
+                $this->{$method}((string) $options[$key]);
+            }
+        }
+
+        foreach (self::FLOAT_OPTIONS as $key => $method) {
+            if (isset($options[$key]) && is_numeric($options[$key])) {
+                $this->{$method}((float) $options[$key]);
+            }
+        }
+
+        foreach (self::INT_OPTIONS as $key => $method) {
+            if (isset($options[$key]) && is_numeric($options[$key])) {
+                $this->{$method}((int) $options[$key]);
+            }
+        }
+
+        foreach (self::BOOL_OPTIONS as $key => $method) {
+            if (isset($options[$key])) {
+                $this->{$method}(filter_var($options[$key], FILTER_VALIDATE_BOOLEAN));
+            }
+        }
+
+        if (filled($options['fontPath'] ?? NULL) || filled($options['fontFamily'] ?? NULL) || filled($options['fontStack'] ?? NULL)) {
+            $this->font(
+                filled($options['fontPath'] ?? NULL) ? (string) $options['fontPath'] : $this->fontPath,
+                filled($options['fontFamily'] ?? NULL) ? (string) $options['fontFamily'] : $this->fontFamily,
+                filled($options['fontStack'] ?? NULL) ? (string) $options['fontStack'] : $this->fontStack,
+            );
+        }
+    }
+
     private function resolveTemplateOptions(string $view): array
     {
         try {
@@ -947,6 +962,10 @@ class Pdf
 
     private function renderPdfToBuffer(): string
     {
+        if ($this->templateOptions !== []) {
+            $this->applyResolvedOptions($this->templateOptions, $this->templateData);
+        }
+
         $binary = $this->resolveBinaryPath();
         $tempFiles = [];
         $tempDir = $this->tempDirectory ?: sys_get_temp_dir();
