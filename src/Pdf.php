@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PDF;
 
+use Closure;
 use Illuminate\Contracts\Support\Renderable;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Blade;
@@ -488,6 +489,13 @@ class Pdf
         return $this;
     }
 
+    public function getTitle(): ?string
+    {
+        return $this->title
+            ?: $this->extractTitleFromHtml($this->contentHtml)
+            ?: NULL;
+    }
+
     public function author(string $author): self
     {
         $this->author = $author;
@@ -623,29 +631,33 @@ class Pdf
         return $this->renderPdfToBuffer();
     }
 
-    public function save(string $path): string
+    public function save(string|Closure $destination): mixed
     {
-        $directory = dirname($path);
-
-        if (! is_dir($directory) && ! mkdir($directory, 0755, TRUE) && ! is_dir($directory)) {
-            throw PdfException::saveFailed($path);
-        }
-
         $pdfData = $this->get();
 
-        if (file_put_contents($path, $pdfData) === FALSE) {
-            throw PdfException::saveFailed($path);
+        if ($destination instanceof Closure) {
+            return $destination($pdfData, $this);
         }
 
-        return $path;
+        $directory = dirname($destination);
+
+        if (! is_dir($directory) && ! mkdir($directory, 0755, TRUE) && ! is_dir($directory)) {
+            throw PdfException::saveFailed($destination);
+        }
+
+        if (file_put_contents($destination, $pdfData) === FALSE) {
+            throw PdfException::saveFailed($destination);
+        }
+
+        return $destination;
     }
 
-    public function toFile(string $path): string
+    public function toFile(string|Closure $path): mixed
     {
         return $this->save($path);
     }
 
-    public function download(string $filename = 'document.pdf'): Response
+    public function download(?string $filename = NULL): Response
     {
         $formattedFilename = $this->normalizeFilename($filename);
 
@@ -655,7 +667,7 @@ class Pdf
         ]);
     }
 
-    public function inline(string $filename = 'document.pdf'): Response
+    public function inline(?string $filename = NULL): Response
     {
         if ($this->withViewer) {
             return $this->renderViewer($filename);
@@ -667,14 +679,13 @@ class Pdf
         ]);
     }
 
-    public function renderViewer(string $filename = 'document.pdf'): Response
+    public function renderViewer(?string $filename = NULL): Response
     {
         $formattedFilename = $this->normalizeFilename($filename);
         $pdfBytes = $this->get();
         $fontDetails = $this->resolveViewerFontDetails();
 
-        $title = $this->title
-            ?: $this->extractTitleFromHtml($this->contentHtml)
+        $title = $this->getTitle()
             ?: pathinfo($formattedFilename, PATHINFO_FILENAME);
 
         $html = view('pdf::pdf-viewer', [
@@ -775,15 +786,28 @@ class Pdf
         };
     }
 
-    private function normalizeFilename(string $filename): string
+    private function normalizeFilename(?string $filename = NULL): string
     {
-        $filename = str_replace(['"', "\r", "\n", '\\', '/'], '', trim($filename));
+        if ($filename !== NULL && trim($filename) !== '') {
+            $cleaned = str_replace(['"', "\r", "\n", '\\', '/'], '', trim($filename));
 
-        if ($filename === '') {
-            $filename = 'document.pdf';
+            if ($cleaned !== '') {
+                return str_ends_with(strtolower($cleaned), '.pdf') ? $cleaned : "{$cleaned}.pdf";
+            }
         }
 
-        return str_ends_with(strtolower($filename), '.pdf') ? $filename : "{$filename}.pdf";
+        $title = $this->getTitle();
+        $date = date('Y-m-d');
+
+        if ($title !== NULL && trim($title) !== '') {
+            $cleanTitle = str_replace(['"', "\r", "\n", '\\', '/'], '', trim($title));
+
+            if ($cleanTitle !== '') {
+                return sprintf('%s_%s.pdf', $cleanTitle, $date);
+            }
+        }
+
+        return sprintf('document_%s.pdf', $date);
     }
 
     private function resolveViewerFontDetails(): array

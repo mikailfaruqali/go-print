@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PDF\Facades;
 
+use Closure;
 use Illuminate\Contracts\Support\Renderable;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Facade;
@@ -51,6 +52,7 @@ use PDF\Pdf as PdfBuilder;
  * @method static PdfBuilder pageOffset(int $offset)
  * @method static PdfBuilder totalOffset(int $offset)
  * @method static PdfBuilder title(string $title)
+ * @method static ?string getTitle()
  * @method static PdfBuilder author(string $author)
  * @method static PdfBuilder subject(string $subject)
  * @method static PdfBuilder keywords(string $keywords)
@@ -72,11 +74,11 @@ use PDF\Pdf as PdfBuilder;
  * @method static PdfBuilder when(mixed $value = null, ?callable $callback = null, ?callable $default = null)
  * @method static PdfBuilder unless(mixed $value = null, ?callable $callback = null, ?callable $default = null)
  * @method static string resolveBinaryPath()
- * @method static Response download(string $filename = 'document.pdf')
- * @method static Response inline(string $filename = 'document.pdf')
- * @method static Response renderViewer(string $filename = 'document.pdf')
- * @method static string save(string $path)
- * @method static string toFile(string $path)
+ * @method static Response download(?string $filename = null)
+ * @method static Response inline(?string $filename = null)
+ * @method static Response renderViewer(?string $filename = null)
+ * @method static mixed save(string|Closure $destination)
+ * @method static mixed toFile(string|Closure $path)
  * @method static string get()
  *
  * @see PdfBuilder
