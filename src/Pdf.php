@@ -18,6 +18,56 @@ class Pdf
 {
     use Conditionable;
 
+    /** Options whose value is a Blade template rendered with the caller's data. */
+    private const BLADE_OPTIONS = [
+        'contentHtml' => 'content',
+        'headerHtml' => 'header',
+        'footerHtml' => 'footer',
+        'watermarkHtml' => 'watermark',
+    ];
+
+    private const STRING_OPTIONS = [
+        'paper' => 'paper',
+        'orientation' => 'orientation',
+        'margin' => 'margin',
+        'marginTop' => 'marginTop',
+        'marginBottom' => 'marginBottom',
+        'marginLeft' => 'marginLeft',
+        'marginRight' => 'marginRight',
+        'headerHeight' => 'headerHeight',
+        'footerHeight' => 'footerHeight',
+        'headerSpacing' => 'headerSpacing',
+        'footerSpacing' => 'footerSpacing',
+        'headerOffset' => 'headerOffset',
+        'footerOffset' => 'footerOffset',
+        'title' => 'title',
+        'author' => 'author',
+        'subject' => 'subject',
+        'keywords' => 'keywords',
+        'baseUrl' => 'baseUrl',
+        'theme' => 'theme',
+        'dir' => 'dir',
+        'icon' => 'icon',
+    ];
+
+    private const FLOAT_OPTIONS = [
+        'watermarkOpacity' => 'watermarkOpacity',
+        'scale' => 'scale',
+    ];
+
+    private const INT_OPTIONS = [
+        'pageOffset' => 'pageOffset',
+        'totalOffset' => 'totalOffset',
+        'timeout' => 'timeout',
+    ];
+
+    private const BOOL_OPTIONS = [
+        'watermarkBehind' => 'watermarkBehind',
+        'preferCssPageSize' => 'preferCssPageSize',
+        'withViewer' => 'withViewer',
+        'quiet' => 'quiet',
+    ];
+
     private string $contentHtml = '';
 
     private ?string $headerHtml = NULL;
@@ -76,7 +126,7 @@ class Pdf
 
     private bool $quiet = TRUE;
 
-    private ?int $timeout = 120;
+    private ?int $timeout;
 
     private ?string $chromePath;
 
@@ -110,165 +160,64 @@ class Pdf
 
     public function view(string $view, array $data = []): self
     {
-        $options = [];
+        $options = $this->resolveTemplateOptions($view);
 
-        try {
-            if (class_exists(PdfTemplate::class)) {
-                $locale = function_exists('app') ? app()->getLocale() : 'en';
-                $options = PdfTemplate::resolveOptionsForView($view, $locale);
-            }
-        } catch (Throwable) {
-        }
-
-        if (filled($options['contentHtml'] ?? NULL)) {
-            $this->content(Blade::render((string) $options['contentHtml'], $data));
-        } elseif (function_exists('view')) {
+        if (blank($options['contentHtml'] ?? NULL) && function_exists('view')) {
             $this->content(view($view, $data));
         }
 
-        if (filled($options)) {
-            $this->applyTemplateOptions($options, $data);
-        }
-
-        return $this;
+        return $this->applyTemplateOptions($options, $data);
     }
 
     public function loadTemplate(string $view, array $data = []): self
     {
-        try {
-            if (class_exists(PdfTemplate::class)) {
-                $locale = function_exists('app') ? app()->getLocale() : 'en';
-                $options = PdfTemplate::resolveOptionsForView($view, $locale);
-                if (filled($options)) {
-                    $this->applyTemplateOptions($options, $data);
-                }
-            }
-        } catch (Throwable) {
-        }
-
-        return $this;
+        return $this->applyTemplateOptions($this->resolveTemplateOptions($view), $data);
     }
 
+    /**
+     * Apply stored template options.
+     *
+     * Database records take priority: whenever an option is present and not null
+     * it overrides whatever was previously set fluently on this instance.
+     */
     public function applyTemplateOptions(array $options, array $data = []): self
     {
-        if (filled($options['contentHtml'] ?? NULL) && blank($this->contentHtml)) {
-            $this->content(Blade::render((string) $options['contentHtml'], $data));
+        foreach (self::BLADE_OPTIONS as $key => $method) {
+            if (filled($options[$key] ?? NULL)) {
+                $this->{$method}($this->renderBlade((string) $options[$key], $data));
+            }
         }
 
-        if (filled($options['headerHtml'] ?? NULL) && blank($this->headerHtml)) {
-            $this->header(Blade::render((string) $options['headerHtml'], $data));
+        foreach (self::STRING_OPTIONS as $key => $method) {
+            if (filled($options[$key] ?? NULL)) {
+                $this->{$method}((string) $options[$key]);
+            }
         }
 
-        if (filled($options['footerHtml'] ?? NULL) && blank($this->footerHtml)) {
-            $this->footer(Blade::render((string) $options['footerHtml'], $data));
+        foreach (self::FLOAT_OPTIONS as $key => $method) {
+            if (isset($options[$key]) && is_numeric($options[$key])) {
+                $this->{$method}((float) $options[$key]);
+            }
         }
 
-        if (filled($options['watermarkHtml'] ?? NULL) && blank($this->watermarkHtml)) {
-            $this->watermark(Blade::render((string) $options['watermarkHtml'], $data));
+        foreach (self::INT_OPTIONS as $key => $method) {
+            if (isset($options[$key]) && is_numeric($options[$key])) {
+                $this->{$method}((int) $options[$key]);
+            }
         }
 
-        if (filled($options['paper'] ?? NULL) && blank($this->paper)) {
-            $this->paper((string) $options['paper']);
+        foreach (self::BOOL_OPTIONS as $key => $method) {
+            if (isset($options[$key])) {
+                $this->{$method}(filter_var($options[$key], FILTER_VALIDATE_BOOLEAN));
+            }
         }
 
-        if (filled($options['orientation'] ?? NULL) && blank($this->orientation)) {
-            $this->orientation((string) $options['orientation']);
-        }
-
-        if (filled($options['margin'] ?? NULL) && blank($this->margin)) {
-            $this->margin((string) $options['margin']);
-        }
-
-        if (filled($options['marginTop'] ?? NULL) && blank($this->marginTop)) {
-            $this->marginTop((string) $options['marginTop']);
-        }
-
-        if (filled($options['marginBottom'] ?? NULL) && blank($this->marginBottom)) {
-            $this->marginBottom((string) $options['marginBottom']);
-        }
-
-        if (filled($options['marginLeft'] ?? NULL) && blank($this->marginLeft)) {
-            $this->marginLeft((string) $options['marginLeft']);
-        }
-
-        if (filled($options['marginRight'] ?? NULL) && blank($this->marginRight)) {
-            $this->marginRight((string) $options['marginRight']);
-        }
-
-        if (filled($options['headerHeight'] ?? NULL) && blank($this->headerHeight)) {
-            $this->headerHeight((string) $options['headerHeight']);
-        }
-
-        if (filled($options['footerHeight'] ?? NULL) && blank($this->footerHeight)) {
-            $this->footerHeight((string) $options['footerHeight']);
-        }
-
-        if (filled($options['headerSpacing'] ?? NULL) && blank($this->headerSpacing)) {
-            $this->headerSpacing((string) $options['headerSpacing']);
-        }
-
-        if (filled($options['footerSpacing'] ?? NULL) && blank($this->footerSpacing)) {
-            $this->footerSpacing((string) $options['footerSpacing']);
-        }
-
-        if (filled($options['headerOffset'] ?? NULL) && blank($this->headerOffset)) {
-            $this->headerOffset((string) $options['headerOffset']);
-        }
-
-        if (filled($options['footerOffset'] ?? NULL) && blank($this->footerOffset)) {
-            $this->footerOffset((string) $options['footerOffset']);
-        }
-
-        if (isset($options['watermarkOpacity']) && is_numeric($options['watermarkOpacity']) && blank($this->watermarkOpacity)) {
-            $this->watermarkOpacity((float) $options['watermarkOpacity']);
-        }
-
-        if (isset($options['watermarkBehind']) && blank($this->watermarkBehind)) {
-            $this->watermarkBehind(filter_var($options['watermarkBehind'], FILTER_VALIDATE_BOOLEAN));
-        }
-
-        if (isset($options['scale']) && is_numeric($options['scale']) && blank($this->scale)) {
-            $this->scale((float) $options['scale']);
-        }
-
-        if (isset($options['preferCssPageSize']) && blank($this->preferCssPageSize)) {
-            $this->preferCssPageSize(filter_var($options['preferCssPageSize'], FILTER_VALIDATE_BOOLEAN));
-        }
-
-        if (isset($options['pageOffset']) && is_numeric($options['pageOffset']) && blank($this->pageOffset)) {
-            $this->pageOffset((int) $options['pageOffset']);
-        }
-
-        if (isset($options['totalOffset']) && is_numeric($options['totalOffset']) && blank($this->totalOffset)) {
-            $this->totalOffset((int) $options['totalOffset']);
-        }
-
-        if (filled($options['title'] ?? NULL) && blank($this->title)) {
-            $this->title((string) $options['title']);
-        }
-
-        if (filled($options['author'] ?? NULL) && blank($this->author)) {
-            $this->author((string) $options['author']);
-        }
-
-        if (filled($options['subject'] ?? NULL) && blank($this->subject)) {
-            $this->subject((string) $options['subject']);
-        }
-
-        if (filled($options['keywords'] ?? NULL) && blank($this->keywords)) {
-            $this->keywords((string) $options['keywords']);
-        }
-
-        if (filled($options['baseUrl'] ?? NULL) && blank($this->baseUrl)) {
-            $this->baseUrl((string) $options['baseUrl']);
-        }
-
-        if (isset($options['withViewer']) && ! $this->withViewer) {
-            $this->withViewer(filter_var($options['withViewer'], FILTER_VALIDATE_BOOLEAN));
-        }
-
-        if (filled($options['timeout'] ?? NULL) && is_numeric($options['timeout']) && $this->timeout === 120) {
-            $this->timeout((int) $options['timeout']);
+        if (filled($options['fontPath'] ?? NULL) || filled($options['fontFamily'] ?? NULL) || filled($options['fontStack'] ?? NULL)) {
+            $this->font(
+                filled($options['fontPath'] ?? NULL) ? (string) $options['fontPath'] : $this->fontPath,
+                filled($options['fontFamily'] ?? NULL) ? (string) $options['fontFamily'] : $this->fontFamily,
+                filled($options['fontStack'] ?? NULL) ? (string) $options['fontStack'] : $this->fontStack,
+            );
         }
 
         return $this;
@@ -740,6 +689,18 @@ class Pdf
         throw PdfException::binaryNotFound($this->binaryPath ?? 'storage/pdf/pdf or system PATH');
     }
 
+    private function resolveTemplateOptions(string $view): array
+    {
+        try {
+            return PdfTemplate::resolveOptionsForView(
+                $view,
+                function_exists('app') ? app()->getLocale() : 'en'
+            );
+        } catch (Throwable) {
+            return [];
+        }
+    }
+
     private function resolveIconHref(): ?string
     {
         if ($this->icon === NULL) {
@@ -869,6 +830,19 @@ class Pdf
         }
     }
 
+    /**
+     * Render a stored option as a Blade string, falling back to the raw
+     * markup when Blade is unavailable or the template fails to compile.
+     */
+    private function renderBlade(string $template, array $data): string
+    {
+        try {
+            return Blade::render($template, $data);
+        } catch (Throwable) {
+            return $template;
+        }
+    }
+
     private function renderHtml(string|Renderable $html): string
     {
         return match (TRUE) {
@@ -969,52 +943,52 @@ class Pdf
                 $command[] = $this->margin;
             }
 
-            if ($this->marginTop !== NULL && $this->marginTop !== '0') {
+            if ($this->marginTop !== NULL && $this->marginTop !== '') {
                 $command[] = '--margin-top';
                 $command[] = $this->marginTop;
             }
 
-            if ($this->marginBottom !== NULL && $this->marginBottom !== '0') {
+            if ($this->marginBottom !== NULL && $this->marginBottom !== '') {
                 $command[] = '--margin-bottom';
                 $command[] = $this->marginBottom;
             }
 
-            if ($this->marginLeft !== NULL && $this->marginLeft !== '0') {
+            if ($this->marginLeft !== NULL && $this->marginLeft !== '') {
                 $command[] = '--margin-left';
                 $command[] = $this->marginLeft;
             }
 
-            if ($this->marginRight !== NULL && $this->marginRight !== '0') {
+            if ($this->marginRight !== NULL && $this->marginRight !== '') {
                 $command[] = '--margin-right';
                 $command[] = $this->marginRight;
             }
 
-            if ($this->headerHeight !== NULL && $this->headerHeight !== '0') {
+            if ($this->headerHeight !== NULL && $this->headerHeight !== '') {
                 $command[] = '--header-height';
                 $command[] = $this->headerHeight;
             }
 
-            if ($this->footerHeight !== NULL && $this->footerHeight !== '0') {
+            if ($this->footerHeight !== NULL && $this->footerHeight !== '') {
                 $command[] = '--footer-height';
                 $command[] = $this->footerHeight;
             }
 
-            if ($this->headerSpacing !== NULL && $this->headerSpacing !== '0') {
+            if ($this->headerSpacing !== NULL && $this->headerSpacing !== '') {
                 $command[] = '--header-spacing';
                 $command[] = $this->headerSpacing;
             }
 
-            if ($this->footerSpacing !== NULL && $this->footerSpacing !== '0') {
+            if ($this->footerSpacing !== NULL && $this->footerSpacing !== '') {
                 $command[] = '--footer-spacing';
                 $command[] = $this->footerSpacing;
             }
 
-            if ($this->headerOffset !== NULL && $this->headerOffset !== '0') {
+            if ($this->headerOffset !== NULL && $this->headerOffset !== '') {
                 $command[] = '--header-offset';
                 $command[] = $this->headerOffset;
             }
 
-            if ($this->footerOffset !== NULL && $this->footerOffset !== '0') {
+            if ($this->footerOffset !== NULL && $this->footerOffset !== '') {
                 $command[] = '--footer-offset';
                 $command[] = $this->footerOffset;
             }
@@ -1037,12 +1011,12 @@ class Pdf
                 $command[] = '--prefer-css-page-size';
             }
 
-            if ($this->pageOffset !== NULL && $this->pageOffset !== 0) {
+            if ($this->pageOffset !== NULL) {
                 $command[] = '--page-offset';
                 $command[] = (string) $this->pageOffset;
             }
 
-            if ($this->totalOffset !== NULL && $this->totalOffset !== 0) {
+            if ($this->totalOffset !== NULL) {
                 $command[] = '--total-offset';
                 $command[] = (string) $this->totalOffset;
             }

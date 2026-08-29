@@ -26,8 +26,14 @@ class PdfTemplate
             ?? $rows->firstWhere('locale', 'all')
             ?? $rows->first();
 
-        $raw = $row?->options ?? '{}';
+        $raw = $row?->options;
 
-        return is_array($raw) ? $raw : ((array) (json_decode((string) $raw, TRUE) ?: []));
+        if (is_array($raw)) {
+            return $raw;
+        }
+
+        $decoded = is_string($raw) ? json_decode($raw, TRUE) : NULL;
+
+        return is_array($decoded) ? $decoded : [];
     }
 }

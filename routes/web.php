@@ -14,8 +14,8 @@ Route::middleware($middleware)
     ->group(function (): void {
         Route::get('/', [PdfTemplateController::class, 'index'])->name('index');
         Route::post('/', [PdfTemplateController::class, 'store'])->name('store');
-        Route::get('/{id}', [PdfTemplateController::class, 'show'])->name('show');
-        Route::put('/{id}', [PdfTemplateController::class, 'update'])->name('update');
-        Route::delete('/{id}', [PdfTemplateController::class, 'destroy'])->name('destroy');
         Route::post('/preview', [PdfTemplateController::class, 'preview'])->name('preview');
+        Route::get('/{id}', [PdfTemplateController::class, 'show'])->whereNumber('id')->name('show');
+        Route::put('/{id}', [PdfTemplateController::class, 'update'])->whereNumber('id')->name('update');
+        Route::delete('/{id}', [PdfTemplateController::class, 'destroy'])->whereNumber('id')->name('destroy');
     });

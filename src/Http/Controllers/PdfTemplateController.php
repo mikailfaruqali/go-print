@@ -185,17 +185,17 @@ class PdfTemplateController extends Controller
 
         $pdf = Pdf::make();
 
-        $contentHtml = trim((string) ($options['contentHtml'] ?? ''));
-        if ($contentHtml !== '') {
-            $pdf->content($contentHtml);
-        } elseif ($viewName !== '' && view()->exists($viewName)) {
-            try {
-                $pdf->content(view($viewName, []));
-            } catch (Throwable) {
-                $pdf->content("<div style='font-family: sans-serif; padding: 30px; text-align: center; border: 2px dashed #ccc;'><h2>View: {$viewName}</h2><p>Previewing template layout</p></div>");
+        // Content from the options wins and is applied (as Blade) by applyTemplateOptions() below.
+        if (blank($options['contentHtml'] ?? NULL)) {
+            if ($viewName !== '' && view()->exists($viewName)) {
+                try {
+                    $pdf->content(view($viewName, []));
+                } catch (Throwable) {
+                    $pdf->content("<div style='font-family: sans-serif; padding: 30px; text-align: center; border: 2px dashed #ccc;'><h2>View: {$viewName}</h2><p>Previewing template layout</p></div>");
+                }
+            } else {
+                $pdf->content("<div style='font-family: sans-serif; padding: 40px; text-align: center;'><h2>Sample Document Preview</h2><p>Configure options on the left to see live preview.</p></div>");
             }
-        } else {
-            $pdf->content("<div style='font-family: sans-serif; padding: 40px; text-align: center;'><h2>Sample Document Preview</h2><p>Configure options on the left to see live preview.</p></div>");
         }
 
         $pdf->applyTemplateOptions($options);
