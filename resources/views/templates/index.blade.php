@@ -589,22 +589,88 @@
             box-shadow: inset 0 0 0 1.5px var(--sn-accent) !important;
         }
 
-        .select2-container--default .select2-results__option {
-            padding: 8px 14px;
-            font-size: 13px;
-            color: var(--sn-text);
-            transition: background-color 0.1s;
+        /* ── Select2 Dropdown Options List ── */
+        .select2-results__options {
+            max-height: 240px;
+            overflow-y: auto;
+            padding: 4px;
         }
 
-        .select2-container--default .select2-results__option--highlighted[aria-selected] {
+        .select2-results__options::-webkit-scrollbar {
+            width: 6px;
+        }
+        .select2-results__options::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .select2-results__options::-webkit-scrollbar-thumb {
+            background: var(--sn-border);
+            border-radius: var(--sn-radius-pill);
+        }
+        .select2-results__options::-webkit-scrollbar-thumb:hover {
+            background: var(--sn-form-hover-border);
+        }
+
+        .select2-container--default .select2-results__option {
+            padding: 7px 12px;
+            font-size: 13px;
+            color: var(--sn-text) !important;
+            background-color: transparent !important;
+            border-radius: var(--sn-radius-sm);
+            margin-bottom: 2px;
+            cursor: pointer;
+            transition: background-color 0.12s ease, color 0.12s ease;
+        }
+
+        /* Hovered / Keyboard Active Option */
+        .select2-container--default .select2-results__option--highlighted,
+        .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
             background-color: var(--sn-hover) !important;
             color: var(--sn-text) !important;
         }
 
-        .select2-container--default .select2-results__option[aria-selected=true] {
-            background-color: rgba(var(--sn-accent-rgb), 0.18) !important;
+        /* Selected (Active) Option */
+        .select2-container--default .select2-results__option--selected,
+        .select2-container--default .select2-results__option[aria-selected="true"] {
+            background-color: rgba(var(--sn-accent-rgb), 0.16) !important;
             color: var(--sn-accent) !important;
-            font-weight: 500;
+            font-weight: 500 !important;
+        }
+
+        /* Selected + Hovered / Highlighted Option */
+        .select2-container--default .select2-results__option--selected.select2-results__option--highlighted,
+        .select2-container--default .select2-results__option--highlighted[aria-selected="true"] {
+            background-color: rgba(var(--sn-accent-rgb), 0.28) !important;
+            color: var(--sn-accent) !important;
+            font-weight: 500 !important;
+        }
+
+        /* Disabled options */
+        .select2-container--default .select2-results__option[aria-disabled="true"] {
+            color: var(--sn-text-muted) !important;
+            cursor: not-allowed;
+            background-color: transparent !important;
+        }
+
+        /* Clear button inside select2 */
+        .select2-container--default .select2-selection--single .select2-selection__clear {
+            position: absolute;
+            inset-inline-end: 32px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 16px;
+            line-height: 1;
+            color: var(--sn-text-muted);
+            margin: 0;
+            padding: 2px 4px;
+            border-radius: var(--sn-radius-sm);
+            transition: color 0.15s ease, background-color 0.15s ease;
+            cursor: pointer;
+            z-index: 2;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__clear:hover {
+            color: var(--sn-ic-danger);
+            background-color: rgba(255, 123, 114, 0.15);
         }
 
         /* Custom Scrollbar for Modal Body */
@@ -868,9 +934,15 @@
                                     <div class="col-12 col-md-4">
                                         <label class="form-label" for="select_locale">Locale</label>
                                         <select id="select_locale" class="form-select sn-select2">
-                                            @foreach($supportedLocales as $loc)
-                                                <option value="{{ $loc }}" {{ $loc === '*' ? 'selected' : '' }}>
-                                                    {{ $loc === '*' ? '* (All / Fallback)' : strtoupper($loc) }}
+                                            @foreach($supportedLocales as $key => $loc)
+                                                @php
+                                                    $code = is_numeric($key) ? (string) $loc : (string) $key;
+                                                    $label = is_numeric($key)
+                                                        ? ($loc === '*' ? '* (All / Fallback)' : strtoupper((string) $loc))
+                                                        : ($code === '*' ? '* (All / Fallback)' : ($loc === $code ? strtoupper($code) : "{$loc} (" . strtoupper($code) . ")"));
+                                                @endphp
+                                                <option value="{{ $code }}" {{ $code === '*' ? 'selected' : '' }}>
+                                                    {{ $label }}
                                                 </option>
                                             @endforeach
                                         </select>

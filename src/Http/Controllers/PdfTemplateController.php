@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace PDF\Http\Controllers;
 
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use PDF\Facades\Pdf;
 use PDF\Services\ViewFinderService;
 use Throwable;
+use Traversable;
 
 class PdfTemplateController extends Controller
 {
@@ -28,11 +30,7 @@ class PdfTemplateController extends Controller
             });
 
         $availableViews = ViewFinderService::getAvailableViews();
-
-        $supportedLocales = (array) config('pdf.locales', ['en', 'ar', 'ckb', 'ku', 'fr', 'de', 'es', 'tr', 'fa']);
-        if (! in_array('*', $supportedLocales, TRUE)) {
-            array_unshift($supportedLocales, '*');
-        }
+        $supportedLocales = $this->resolveSupportedLocales();
 
         $paperSizes = [
             'A4', 'Letter', 'Legal', 'A3', 'A5', 'A6', 'A0', 'A1', 'A2',
@@ -201,6 +199,51 @@ class PdfTemplateController extends Controller
         $pdf->applyTemplateOptions($options);
 
         return $pdf->withViewer()->inline('template-preview.pdf');
+    }
+
+    /**
+     * Resolve the supported template locales from configuration.
+     * Supports closures, callable arrays/strings, Collections, and regular arrays.
+     * Always ensures the '*' wildcard (all/fallback) is at the first position.
+     *
+     * @return array<int|string, string>
+     */
+    protected function resolveSupportedLocales(): array
+    {
+        $locales = config('pdf.locales', ['en', 'ar', 'ckb', 'ku', 'fr', 'de', 'es', 'tr', 'fa']);
+
+        if (is_callable($locales)) {
+            $locales = app()->call($locales);
+        } elseif (is_string($locales) && (class_exists($locales) || str_contains($locales, '@') || str_contains($locales, '::'))) {
+            $locales = app()->call($locales);
+        } elseif (is_array($locales) && count($locales) === 2 && is_string($locales[0]) && is_string($locales[1]) && (class_exists($locales[0]) || method_exists($locales[0], $locales[1]))) {
+            $locales = app()->call($locales);
+        }
+
+        if ($locales instanceof Arrayable) {
+            $locales = $locales->toArray();
+        } elseif ($locales instanceof Traversable) {
+            $locales = iterator_to_array($locales);
+        } else {
+            $locales = (array) $locales;
+        }
+
+        $cleanLocales = [];
+        foreach ($locales as $key => $value) {
+            if ($value === '*' || $key === '*') {
+                continue;
+            }
+
+            $cleanLocales[$key] = $value;
+        }
+
+        if (array_is_list($cleanLocales)) {
+            array_unshift($cleanLocales, '*');
+
+            return $cleanLocales;
+        }
+
+        return ['*' => '*'] + $cleanLocales;
     }
 
     private function sanitizeOptions(array $options): array
