@@ -24,9 +24,32 @@ type geometry struct {
 // resolveGeometry converts the string dimension flags into inches and applies
 // the --margin shorthand.
 func resolveGeometry(cfg *config) (*geometry, error) {
-	w, h, err := GetPaperDimensions(cfg.paperSize, cfg.orientation)
-	if err != nil {
-		return nil, err
+	var w, h float64
+	var err error
+
+	if cfg.pageWidth != "" || cfg.pageHeight != "" {
+		if cfg.pageWidth == "" || cfg.pageHeight == "" {
+			return nil, fmt.Errorf("both --page-width and --page-height must be provided together")
+		}
+		w, err = ParseDimensionToInches(cfg.pageWidth)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --page-width: %w", err)
+		}
+		h, err = ParseDimensionToInches(cfg.pageHeight)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --page-height: %w", err)
+		}
+		if w <= 0 || h <= 0 {
+			return nil, fmt.Errorf("page width and height must be greater than zero")
+		}
+		if isLandscape(cfg.orientation) {
+			w, h = h, w
+		}
+	} else {
+		w, h, err = GetPaperDimensions(cfg.paperSize, cfg.orientation)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// --margin seeds all four sides; an explicit side still wins because the

@@ -853,7 +853,11 @@
                                     <span class="sn-badge-locale">{{ strtoupper($t->locale) }}</span>
                                 </td>
                                 <td>
-                                    <span class="sn-tag"><i class="fa-regular fa-file"></i> {{ $t->options['paper'] ?? 'A4' }}</span>
+                                    @if(!empty($t->options['pageWidth']) && !empty($t->options['pageHeight']))
+                                        <span class="sn-tag"><i class="fa-regular fa-file"></i> {{ $t->options['pageWidth'] }} × {{ $t->options['pageHeight'] }}</span>
+                                    @else
+                                        <span class="sn-tag"><i class="fa-regular fa-file"></i> {{ $t->options['paper'] ?? 'A4' }}</span>
+                                    @endif
                                     <span class="sn-tag"><i class="fa-solid fa-arrows-up-down-left-right"></i> {{ $t->options['orientation'] ?? 'portrait' }}</span>
                                     @if(!empty($t->options['headerHtml']))
                                         <span class="sn-tag ic-primary"><i class="fa-solid fa-heading"></i> Header</span>
@@ -956,7 +960,7 @@
                                     <i class="fa-solid fa-file-lines ic-primary"></i> Page Dimensions & Margins
                                 </div>
                                 <div class="row g-3 mb-3">
-                                    <div class="col-12 col-md-4">
+                                    <div class="col-12 col-md-3">
                                         <label class="form-label" for="opt_paper">Paper Size</label>
                                         <select id="opt_paper" class="form-select sn-select2">
                                             @foreach($paperSizes as $p)
@@ -964,13 +968,24 @@
                                             @endforeach
                                         </select>
                                     </div>
-                                    <div class="col-12 col-md-4">
+                                    <div class="col-12 col-md-3">
                                         <label class="form-label" for="opt_orientation">Orientation</label>
                                         <select id="opt_orientation" class="form-select sn-select2">
                                             <option value="portrait" selected>Portrait</option>
                                             <option value="landscape">Landscape</option>
                                         </select>
                                     </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label" for="opt_page_width">Custom Width</label>
+                                        <input type="text" id="opt_page_width" class="form-control" placeholder="e.g. 210mm, 8.5in">
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label" for="opt_page_height">Custom Height</label>
+                                        <input type="text" id="opt_page_height" class="form-control" placeholder="e.g. 297mm, 11in">
+                                    </div>
+                                </div>
+
+                                <div class="row g-3 mb-3">
                                     <div class="col-12 col-md-4">
                                         <label class="form-label" for="opt_scale">Scale (0.1 - 2.0)</label>
                                         <input type="number" step="0.05" min="0.1" max="2" id="opt_scale" class="form-control" placeholder="1.0">
@@ -1229,6 +1244,8 @@
                 }
 
                 add('paper', $('#opt_paper').val());
+                add('pageWidth', $('#opt_page_width').val());
+                add('pageHeight', $('#opt_page_height').val());
                 add('orientation', $('#opt_orientation').val());
                 if ($('#opt_scale').val()) opts['scale'] = parseFloat($('#opt_scale').val());
                 add('marginTop', $('#opt_margin_top').val());
@@ -1273,6 +1290,8 @@
 
                     var opts = t.options || {};
                     $('#opt_paper').val(opts.paper || 'A4').trigger('change');
+                    $('#opt_page_width').val(opts.pageWidth || '');
+                    $('#opt_page_height').val(opts.pageHeight || '');
                     $('#opt_orientation').val(opts.orientation || 'portrait').trigger('change');
                     $('#opt_scale').val(opts.scale !== undefined ? opts.scale : '');
                     $('#opt_margin_top').val(opts.marginTop || '');
@@ -1311,6 +1330,8 @@
                     $('#select_view').val('').trigger('change');
                     $('#select_locale').val('*').trigger('change');
                     $('#opt_paper').val('A4').trigger('change');
+                    $('#opt_page_width').val('');
+                    $('#opt_page_height').val('');
                     $('#opt_orientation').val('portrait').trigger('change');
                     $('#opt_watermark_behind').val('').trigger('change');
                 }
@@ -1350,6 +1371,19 @@
                         icon: 'warning',
                         title: 'View Required',
                         text: 'Please choose or type a Blade view name.',
+                        customClass: { popup: 'sn-dialog' }
+                    });
+                    return;
+                }
+
+                var pageWidth = $('#opt_page_width').val();
+                var pageHeight = $('#opt_page_height').val();
+
+                if ((pageWidth && !pageHeight) || (!pageWidth && pageHeight)) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Custom Dimensions',
+                        text: 'Both width and height must be provided together.',
                         customClass: { popup: 'sn-dialog' }
                     });
                     return;
@@ -1435,6 +1469,19 @@
             });
 
             $('#btn-modal-preview').on('click', function() {
+                var pageWidth = $('#opt_page_width').val();
+                var pageHeight = $('#opt_page_height').val();
+
+                if ((pageWidth && !pageHeight) || (!pageWidth && pageHeight)) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Custom Dimensions',
+                        text: 'Both width and height must be provided together.',
+                        customClass: { popup: 'sn-dialog' }
+                    });
+                    return;
+                }
+
                 var view = $('#select_view').val();
                 var options = collectOptions();
                 runPreview(view, options);

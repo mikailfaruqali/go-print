@@ -33,6 +33,8 @@ Input / output:
 Page setup:
   --paper <size>          A0-A6, B4, B5, Letter, Legal, Tabloid, Ledger,
                           Executive, Statement, or WIDTHxHEIGHT (default: A4)
+  --page-width <dim>      Explicit page width (e.g. 210mm, 8.5in, 500px)
+  --page-height <dim>     Explicit page height (e.g. 297mm, 11in, 800px)
   --orientation <mode>    portrait | landscape (default: portrait)
   --margin <dim>          Set all four margins at once
   --margin-top <dim>      Top margin    (default: 0)
@@ -131,6 +133,7 @@ type config struct {
 	headerFile, footerFile           string
 	watermarkFile, baseURL           string
 	paperSize, orientation           string
+	pageWidth, pageHeight           string
 	margin                           string
 	marginTop, marginBottom          string
 	marginLeft, marginRight          string
@@ -161,6 +164,10 @@ func parseFlags(cfg *config) error {
 	fs.StringVar(&cfg.watermarkFile, "watermark", "", "")
 	fs.StringVar(&cfg.baseURL, "base-url", "", "")
 	fs.StringVar(&cfg.paperSize, "paper", "A4", "")
+	fs.StringVar(&cfg.pageWidth, "page-width", "", "")
+	fs.StringVar(&cfg.pageHeight, "page-height", "", "")
+	fs.StringVar(&cfg.pageWidth, "paper-width", "", "")
+	fs.StringVar(&cfg.pageHeight, "paper-height", "", "")
 	fs.StringVar(&cfg.orientation, "orientation", "portrait", "")
 	fs.StringVar(&cfg.margin, "margin", "", "")
 	fs.StringVar(&cfg.marginTop, "margin-top", "0", "")

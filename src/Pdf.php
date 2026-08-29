@@ -28,6 +28,10 @@ class Pdf
 
     private const STRING_OPTIONS = [
         'paper' => 'paper',
+        'pageWidth' => 'pageWidth',
+        'pageHeight' => 'pageHeight',
+        'paperWidth' => 'pageWidth',
+        'paperHeight' => 'pageHeight',
         'orientation' => 'orientation',
         'margin' => 'margin',
         'marginTop' => 'marginTop',
@@ -77,6 +81,10 @@ class Pdf
     private ?string $watermarkHtml = NULL;
 
     private ?string $paper = NULL;
+
+    private ?string $pageWidth = NULL;
+
+    private ?string $pageHeight = NULL;
 
     private ?string $orientation = NULL;
 
@@ -283,6 +291,33 @@ class Pdf
         $this->paper = $paper;
 
         return $this;
+    }
+
+    public function pageWidth(string $width): self
+    {
+        $this->pageWidth = $width;
+
+        return $this;
+    }
+
+    public function pageHeight(string $height): self
+    {
+        $this->pageHeight = $height;
+
+        return $this;
+    }
+
+    public function pageSize(string $width, string $height): self
+    {
+        $this->pageWidth = $width;
+        $this->pageHeight = $height;
+
+        return $this;
+    }
+
+    public function dimensions(string $width, string $height): self
+    {
+        return $this->pageSize($width, $height);
     }
 
     public function a4(): self
@@ -928,7 +963,12 @@ class Pdf
                 $command[] = $watermarkPath;
             }
 
-            if ($this->paper !== NULL) {
+            if ($this->pageWidth !== NULL && $this->pageWidth !== '' && $this->pageHeight !== NULL && $this->pageHeight !== '') {
+                $command[] = '--page-width';
+                $command[] = $this->pageWidth;
+                $command[] = '--page-height';
+                $command[] = $this->pageHeight;
+            } elseif ($this->paper !== NULL) {
                 $command[] = '--paper';
                 $command[] = $this->paper;
             }

@@ -251,7 +251,7 @@ class PdfTemplateController extends Controller
         $clean = [];
 
         $stringFields = [
-            'paper', 'orientation', 'margin', 'marginTop', 'marginBottom',
+            'paper', 'pageWidth', 'pageHeight', 'orientation', 'margin', 'marginTop', 'marginBottom',
             'marginLeft', 'marginRight', 'headerHeight', 'footerHeight',
             'headerSpacing', 'footerSpacing', 'headerOffset', 'footerOffset',
             'title', 'author', 'subject', 'keywords', 'baseUrl', 'theme',
@@ -263,6 +263,10 @@ class PdfTemplateController extends Controller
             if (isset($options[$stringField]) && trim((string) $options[$stringField]) !== '') {
                 $clean[$stringField] = (string) $options[$stringField];
             }
+        }
+
+        if (isset($clean['pageWidth']) xor isset($clean['pageHeight'])) {
+            unset($clean['pageWidth'], $clean['pageHeight']);
         }
 
         if (isset($options['watermarkOpacity']) && is_numeric($options['watermarkOpacity'])) {
