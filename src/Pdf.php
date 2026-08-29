@@ -19,6 +19,8 @@ class Pdf
 {
     use Conditionable;
 
+    public const DEFAULT_FAVICON = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3CradialGradient id='sg' cx='30%25' cy='30%25' r='70%25'%3E%3Cstop offset='0%25' stop-color='%232ecc71'/%3E%3Cstop offset='40%25' stop-color='%23249658'/%3E%3Cstop offset='100%25' stop-color='%231a6b3f'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect x='4' y='4' width='92' height='92' rx='8' fill='url(%23sg)'/%3E%3Cg fill='%23fff' transform='translate(28,28)'%3E%3Crect x='0' y='0' width='19' height='19' rx='2'/%3E%3Crect x='23' y='0' width='19' height='19' rx='2'/%3E%3Crect x='0' y='23' width='19' height='19' rx='2'/%3E%3Crect x='23' y='23' width='19' height='19' rx='2'/%3E%3C/g%3E%3C/svg%3E";
+
     /** Options whose value is a Blade template rendered with the caller's data. */
     private const BLADE_OPTIONS = [
         'contentHtml' => 'content',
@@ -155,7 +157,7 @@ class Pdf
 
     private string $theme = 'dark';
 
-    private ?string $icon = NULL;
+    private ?string $icon;
 
     public function __construct()
     {
@@ -747,10 +749,10 @@ class Pdf
         }
     }
 
-    private function resolveIconHref(): ?string
+    private function resolveIconHref(): string
     {
         if ($this->icon === NULL) {
-            return NULL;
+            return self::DEFAULT_FAVICON;
         }
 
         if (str_starts_with($this->icon, 'data:') || preg_match('#^https?://#i', $this->icon) === 1) {
@@ -874,6 +876,7 @@ class Pdf
         $this->chromePath = $config['chrome_path'] ?? NULL;
         $this->timeout = isset($config['timeout']) ? (int) $config['timeout'] : 120;
         $this->tempDirectory = $config['temp_path'] ?? NULL;
+        $this->icon = $config['icon'] ?? NULL;
     }
 
     private function readConfig(): array

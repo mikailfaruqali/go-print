@@ -4,9 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ $title }}</title>
-    @if (filled($icon ?? null))
-        <link rel="icon" href="{{ $icon }}" />
-    @endif
+    <link rel="icon" type="image/svg+xml" href="{{ $icon ?? 'data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 100 100\'%3E%3Cdefs%3E%3CradialGradient id=\'sg\' cx=\'30%25\' cy=\'30%25\' r=\'70%25\'%3E%3Cstop offset=\'0%25\' stop-color=\'%232ecc71\'/%3E%3Cstop offset=\'40%25\' stop-color=\'%23249658\'/%3E%3Cstop offset=\'100%25\' stop-color=\'%231a6b3f\'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect x=\'4\' y=\'4\' width=\'92\' height=\'92\' rx=\'8\' fill=\'url(%23sg)\'/%3E%3Cg fill=\'%23fff\' transform=\'translate(28,28)\'%3E%3Crect x=\'0\' y=\'0\' width=\'19\' height=\'19\' rx=\'2\'/%3E%3Crect x=\'23\' y=\'0\' width=\'19\' height=\'19\' rx=\'2\'/%3E%3Crect x=\'0\' y=\'23\' width=\'19\' height=\'19\' rx=\'2\'/%3E%3Crect x=\'23\' y=\'23\' width=\'19\' height=\'19\' rx=\'2\'/%3E%3C/g%3E%3C/svg%3E' }}" />
     @if (filled($font))
         <style>
             @font-face {
