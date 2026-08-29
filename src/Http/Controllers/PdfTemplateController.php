@@ -8,22 +8,24 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\DB;
 use PDF\Facades\Pdf;
-use PDF\Models\PdfTemplate;
 use PDF\Services\ViewFinderService;
 use Throwable;
 
 class PdfTemplateController extends Controller
 {
-    /**
-     * Display the PDF Templates management interface.
-     */
     public function index(): Response
     {
-        $templates = PdfTemplate::query()
+        $templates = DB::table('pdf_templates')
             ->orderBy('view')
             ->orderBy('locale')
-            ->get();
+            ->get()
+            ->map(function ($t) {
+                $t->options = is_array($t->options) ? $t->options : ((array) (json_decode((string) $t->options, TRUE) ?: []));
+
+                return $t;
+            });
 
         $availableViews = ViewFinderService::getAvailableViews();
 
@@ -45,9 +47,6 @@ class PdfTemplateController extends Controller
         ]);
     }
 
-    /**
-     * Store a newly created template in storage.
-     */
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -56,7 +55,7 @@ class PdfTemplateController extends Controller
             'options' => ['nullable', 'array'],
         ]);
 
-        $exists = PdfTemplate::query()
+        $exists = DB::table('pdf_templates')
             ->where('view', $validated['view'])
             ->where('locale', $validated['locale'])
             ->exists();
@@ -69,12 +68,22 @@ class PdfTemplateController extends Controller
         }
 
         $options = $this->sanitizeOptions($request->input('options', []));
+        $now = date('Y-m-d H:i:s');
 
-        $template = PdfTemplate::create([
+        $id = DB::table('pdf_templates')->insertGetId([
+            'view' => $validated['view'],
+            'locale' => $validated['locale'],
+            'options' => json_encode($options, JSON_UNESCAPED_UNICODE),
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $template = (object) [
+            'id' => $id,
             'view' => $validated['view'],
             'locale' => $validated['locale'],
             'options' => $options,
-        ]);
+        ];
 
         return response()->json([
             'success' => TRUE,
@@ -83,12 +92,20 @@ class PdfTemplateController extends Controller
         ], 201);
     }
 
-    /**
-     * Get a specific template as JSON.
-     */
     public function show(int $id): JsonResponse
     {
-        $template = PdfTemplate::findOrFail($id);
+        $template = DB::table('pdf_templates')->where('id', $id)->first();
+
+        if (! $template) {
+            return response()->json([
+                'success' => FALSE,
+                'message' => 'Template not found.',
+            ], 404);
+        }
+
+        $template->options = is_array($template->options)
+            ? $template->options
+            : ((array) (json_decode((string) $template->options, TRUE) ?: []));
 
         return response()->json([
             'success' => TRUE,
@@ -96,12 +113,16 @@ class PdfTemplateController extends Controller
         ]);
     }
 
-    /**
-     * Update the specified template in storage.
-     */
     public function update(Request $request, int $id): JsonResponse
     {
-        $template = PdfTemplate::findOrFail($id);
+        $template = DB::table('pdf_templates')->where('id', $id)->first();
+
+        if (! $template) {
+            return response()->json([
+                'success' => FALSE,
+                'message' => 'Template not found.',
+            ], 404);
+        }
 
         $validated = $request->validate([
             'view' => ['required', 'string', 'max:255'],
@@ -109,7 +130,7 @@ class PdfTemplateController extends Controller
             'options' => ['nullable', 'array'],
         ]);
 
-        $exists = PdfTemplate::query()
+        $exists = DB::table('pdf_templates')
             ->where('view', $validated['view'])
             ->where('locale', $validated['locale'])
             ->where('id', '!=', $id)
@@ -124,11 +145,19 @@ class PdfTemplateController extends Controller
 
         $options = $this->sanitizeOptions($request->input('options', []));
 
-        $template->update([
+        DB::table('pdf_templates')->where('id', $id)->update([
+            'view' => $validated['view'],
+            'locale' => $validated['locale'],
+            'options' => json_encode($options, JSON_UNESCAPED_UNICODE),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        $template = (object) [
+            'id' => $id,
             'view' => $validated['view'],
             'locale' => $validated['locale'],
             'options' => $options,
-        ]);
+        ];
 
         return response()->json([
             'success' => TRUE,
@@ -137,13 +166,9 @@ class PdfTemplateController extends Controller
         ]);
     }
 
-    /**
-     * Remove the specified template from storage.
-     */
     public function destroy(int $id): JsonResponse
     {
-        $template = PdfTemplate::findOrFail($id);
-        $template->delete();
+        DB::table('pdf_templates')->where('id', $id)->delete();
 
         return response()->json([
             'success' => TRUE,
@@ -151,9 +176,6 @@ class PdfTemplateController extends Controller
         ]);
     }
 
-    /**
-     * Preview the PDF with template options applied.
-     */
     public function preview(Request $request): Response
     {
         $viewName = $request->input('view', '');
@@ -163,7 +185,6 @@ class PdfTemplateController extends Controller
 
         $pdf = Pdf::make();
 
-        // 1. Resolve content HTML: custom HTML override or sample render of view
         $contentHtml = trim((string) ($options['contentHtml'] ?? ''));
         if ($contentHtml !== '') {
             $pdf->content($contentHtml);
@@ -171,26 +192,17 @@ class PdfTemplateController extends Controller
             try {
                 $pdf->content(view($viewName, []));
             } catch (Throwable) {
-                // If view requires variables that aren't supplied, fallback to dummy container with view name
                 $pdf->content("<div style='font-family: sans-serif; padding: 30px; text-align: center; border: 2px dashed #ccc;'><h2>View: {$viewName}</h2><p>Previewing template layout</p></div>");
             }
         } else {
             $pdf->content("<div style='font-family: sans-serif; padding: 40px; text-align: center;'><h2>Sample Document Preview</h2><p>Configure options on the left to see live preview.</p></div>");
         }
 
-        // 2. Apply all options to Pdf instance
         $pdf->applyTemplateOptions($options);
 
-        // Always preview with built-in sn-kit viewer inline
         return $pdf->withViewer()->inline('template-preview.pdf');
     }
 
-    /**
-     * Sanitize and format options array.
-     *
-     * @param  array<string, mixed>  $options
-     * @return array<string, mixed>
-     */
     private function sanitizeOptions(array $options): array
     {
         $clean = [];

@@ -107,214 +107,153 @@ class Pdf
         return new self;
     }
 
-    /**
-     * Load a Blade view and automatically apply any custom template options configured for it.
-     *
-     * @param  string  $view  View name (e.g. 'invoices.show')
-     * @param  array<string, mixed>  $data  View data array
-    /**
-     * Load a Blade view and automatically apply any custom template options configured for it.
-     * @param  string  $view  View name (e.g. 'invoices.show')
-     * @param  array<string, mixed>  $data  View data array
-     * @param  array<string, mixed>  $mergeData  Additional merge data
-     * @param  string|null  $locale  Specific locale (defaults to app()->getLocale())
-     * @param  string|null  $fallbackView  Optional fallback template view (e.g. '*' or 'pdf::default')
-     */
-    public function view(string $view, array $data = [], array $mergeData = [], ?string $locale = NULL, ?string $fallbackView = NULL): self
+    public function view(string $view, array $data = []): self
     {
-        $this->loadTemplate($view, $locale, $fallbackView);
-
         if (function_exists('view')) {
-            $this->content(view($view, $data, $mergeData));
+            $this->content(view($view, $data));
         }
+
+        $this->loadTemplate($view);
 
         return $this;
     }
 
-    /**
-     * Load and apply template options for a given view name and locale from the database.
-     *
-     * @param  string  $view  Target view name
-     * @param  string|null  $locale  Target locale
-     * @param  string|null  $fallbackView  Optional fallback view name
-     */
-    public function loadTemplate(string $view, ?string $locale = NULL, ?string $fallbackView = NULL): self
+    public function loadTemplate(string $view): self
     {
         try {
             if (class_exists(PdfTemplate::class)) {
-                $options = PdfTemplate::resolveOptionsForView($view, $locale, $fallbackView);
-                if ($options !== []) {
+                $locale = function_exists('app') ? app()->getLocale() : 'en';
+                $options = PdfTemplate::resolveOptionsForView($view, $locale);
+                if (filled($options)) {
                     $this->applyTemplateOptions($options);
                 }
             }
         } catch (Throwable) {
-            // Silently proceed if database is unmigrated or unconfigured
         }
 
         return $this;
     }
 
-    /**
-     * Apply an options associative array (from database JSON column or custom settings) to this PDF builder.
-     *
-     * @param  array<string, mixed>  $options
-     */
     public function applyTemplateOptions(array $options): self
     {
-        if (isset($options['contentHtml']) && trim((string) $options['contentHtml']) !== '') {
+        if (filled($options['contentHtml'] ?? NULL) && blank($this->contentHtml)) {
             $this->content((string) $options['contentHtml']);
         }
 
-        if (isset($options['headerHtml']) && trim((string) $options['headerHtml']) !== '') {
+        if (filled($options['headerHtml'] ?? NULL) && blank($this->headerHtml)) {
             $this->header((string) $options['headerHtml']);
         }
 
-        if (isset($options['footerHtml']) && trim((string) $options['footerHtml']) !== '') {
+        if (filled($options['footerHtml'] ?? NULL) && blank($this->footerHtml)) {
             $this->footer((string) $options['footerHtml']);
         }
 
-        if (isset($options['watermarkHtml']) && trim((string) $options['watermarkHtml']) !== '') {
+        if (filled($options['watermarkHtml'] ?? NULL) && blank($this->watermarkHtml)) {
             $this->watermark((string) $options['watermarkHtml']);
         }
 
-        if (isset($options['paper']) && trim((string) $options['paper']) !== '') {
+        if (filled($options['paper'] ?? NULL) && blank($this->paper)) {
             $this->paper((string) $options['paper']);
         }
 
-        if (isset($options['orientation']) && trim((string) $options['orientation']) !== '') {
+        if (filled($options['orientation'] ?? NULL) && blank($this->orientation)) {
             $this->orientation((string) $options['orientation']);
         }
 
-        if (isset($options['margin']) && trim((string) $options['margin']) !== '') {
+        if (filled($options['margin'] ?? NULL) && blank($this->margin)) {
             $this->margin((string) $options['margin']);
         }
 
-        if (isset($options['marginTop']) && trim((string) $options['marginTop']) !== '') {
+        if (filled($options['marginTop'] ?? NULL) && blank($this->marginTop)) {
             $this->marginTop((string) $options['marginTop']);
         }
 
-        if (isset($options['marginBottom']) && trim((string) $options['marginBottom']) !== '') {
+        if (filled($options['marginBottom'] ?? NULL) && blank($this->marginBottom)) {
             $this->marginBottom((string) $options['marginBottom']);
         }
 
-        if (isset($options['marginLeft']) && trim((string) $options['marginLeft']) !== '') {
+        if (filled($options['marginLeft'] ?? NULL) && blank($this->marginLeft)) {
             $this->marginLeft((string) $options['marginLeft']);
         }
 
-        if (isset($options['marginRight']) && trim((string) $options['marginRight']) !== '') {
+        if (filled($options['marginRight'] ?? NULL) && blank($this->marginRight)) {
             $this->marginRight((string) $options['marginRight']);
         }
 
-        if (isset($options['headerHeight']) && trim((string) $options['headerHeight']) !== '') {
+        if (filled($options['headerHeight'] ?? NULL) && blank($this->headerHeight)) {
             $this->headerHeight((string) $options['headerHeight']);
         }
 
-        if (isset($options['footerHeight']) && trim((string) $options['footerHeight']) !== '') {
+        if (filled($options['footerHeight'] ?? NULL) && blank($this->footerHeight)) {
             $this->footerHeight((string) $options['footerHeight']);
         }
 
-        if (isset($options['headerSpacing']) && trim((string) $options['headerSpacing']) !== '') {
+        if (filled($options['headerSpacing'] ?? NULL) && blank($this->headerSpacing)) {
             $this->headerSpacing((string) $options['headerSpacing']);
         }
 
-        if (isset($options['footerSpacing']) && trim((string) $options['footerSpacing']) !== '') {
+        if (filled($options['footerSpacing'] ?? NULL) && blank($this->footerSpacing)) {
             $this->footerSpacing((string) $options['footerSpacing']);
         }
 
-        if (isset($options['headerOffset']) && trim((string) $options['headerOffset']) !== '') {
+        if (filled($options['headerOffset'] ?? NULL) && blank($this->headerOffset)) {
             $this->headerOffset((string) $options['headerOffset']);
         }
 
-        if (isset($options['footerOffset']) && trim((string) $options['footerOffset']) !== '') {
+        if (filled($options['footerOffset'] ?? NULL) && blank($this->footerOffset)) {
             $this->footerOffset((string) $options['footerOffset']);
         }
 
-        if (isset($options['watermarkOpacity']) && is_numeric($options['watermarkOpacity'])) {
+        if (isset($options['watermarkOpacity']) && is_numeric($options['watermarkOpacity']) && blank($this->watermarkOpacity)) {
             $this->watermarkOpacity((float) $options['watermarkOpacity']);
         }
 
-        if (isset($options['watermarkBehind'])) {
+        if (isset($options['watermarkBehind']) && blank($this->watermarkBehind)) {
             $this->watermarkBehind(filter_var($options['watermarkBehind'], FILTER_VALIDATE_BOOLEAN));
         }
 
-        if (isset($options['scale']) && is_numeric($options['scale'])) {
+        if (isset($options['scale']) && is_numeric($options['scale']) && blank($this->scale)) {
             $this->scale((float) $options['scale']);
         }
 
-        if (isset($options['preferCssPageSize'])) {
+        if (isset($options['preferCssPageSize']) && blank($this->preferCssPageSize)) {
             $this->preferCssPageSize(filter_var($options['preferCssPageSize'], FILTER_VALIDATE_BOOLEAN));
         }
 
-        if (isset($options['pageOffset']) && is_numeric($options['pageOffset'])) {
+        if (isset($options['pageOffset']) && is_numeric($options['pageOffset']) && blank($this->pageOffset)) {
             $this->pageOffset((int) $options['pageOffset']);
         }
 
-        if (isset($options['totalOffset']) && is_numeric($options['totalOffset'])) {
+        if (isset($options['totalOffset']) && is_numeric($options['totalOffset']) && blank($this->totalOffset)) {
             $this->totalOffset((int) $options['totalOffset']);
         }
 
-        if (isset($options['title']) && trim((string) $options['title']) !== '') {
+        if (filled($options['title'] ?? NULL) && blank($this->title)) {
             $this->title((string) $options['title']);
         }
 
-        if (isset($options['author']) && trim((string) $options['author']) !== '') {
+        if (filled($options['author'] ?? NULL) && blank($this->author)) {
             $this->author((string) $options['author']);
         }
 
-        if (isset($options['subject']) && trim((string) $options['subject']) !== '') {
+        if (filled($options['subject'] ?? NULL) && blank($this->subject)) {
             $this->subject((string) $options['subject']);
         }
 
-        if (isset($options['keywords']) && trim((string) $options['keywords']) !== '') {
+        if (filled($options['keywords'] ?? NULL) && blank($this->keywords)) {
             $this->keywords((string) $options['keywords']);
         }
 
-        if (isset($options['baseUrl']) && trim((string) $options['baseUrl']) !== '') {
+        if (filled($options['baseUrl'] ?? NULL) && blank($this->baseUrl)) {
             $this->baseUrl((string) $options['baseUrl']);
         }
 
-        if (isset($options['quiet'])) {
-            $this->quiet(filter_var($options['quiet'], FILTER_VALIDATE_BOOLEAN));
-        }
-
-        if (isset($options['timeout']) && is_numeric($options['timeout'])) {
-            $this->timeout((int) $options['timeout']);
-        }
-
-        if (isset($options['chromePath']) && trim((string) $options['chromePath']) !== '') {
-            $this->chromePath((string) $options['chromePath']);
-        }
-
-        if (isset($options['binaryPath']) && trim((string) $options['binaryPath']) !== '') {
-            $this->binaryPath((string) $options['binaryPath']);
-        }
-
-        if (isset($options['tempDirectory']) && trim((string) $options['tempDirectory']) !== '') {
-            $this->tempDirectory((string) $options['tempDirectory']);
-        }
-
-        if (isset($options['withViewer'])) {
+        if (isset($options['withViewer']) && ! $this->withViewer) {
             $this->withViewer(filter_var($options['withViewer'], FILTER_VALIDATE_BOOLEAN));
         }
 
-        if (isset($options['dir']) && trim((string) $options['dir']) !== '') {
-            $this->dir((string) $options['dir']);
-        }
-
-        if (isset($options['theme']) && trim((string) $options['theme']) !== '') {
-            $this->theme((string) $options['theme']);
-        }
-
-        if (isset($options['icon']) && trim((string) $options['icon']) !== '') {
-            $this->icon((string) $options['icon']);
-        }
-
-        if (isset($options['fontPath']) || isset($options['fontFamily']) || isset($options['fontStack'])) {
-            $this->font(
-                $options['fontPath'] ?? NULL,
-                $options['fontFamily'] ?? NULL,
-                $options['fontStack'] ?? NULL
-            );
+        if (filled($options['timeout'] ?? NULL) && is_numeric($options['timeout']) && $this->timeout === 120) {
+            $this->timeout((int) $options['timeout']);
         }
 
         return $this;
@@ -334,9 +273,27 @@ class Pdf
         return $this;
     }
 
+    public function headerView(string $view, array $data = []): self
+    {
+        if (function_exists('view')) {
+            $this->header(view($view, $data));
+        }
+
+        return $this;
+    }
+
     public function footer(string|Renderable $html): self
     {
         $this->footerHtml = $this->renderHtml($html);
+
+        return $this;
+    }
+
+    public function footerView(string $view, array $data = []): self
+    {
+        if (function_exists('view')) {
+            $this->footer(view($view, $data));
+        }
 
         return $this;
     }
@@ -348,6 +305,15 @@ class Pdf
         return $this;
     }
 
+    public function watermarkView(string $view, array $data = []): self
+    {
+        if (function_exists('view')) {
+            $this->watermark(view($view, $data));
+        }
+
+        return $this;
+    }
+
     public function paper(string $paper): self
     {
         $this->paper = $paper;
@@ -355,11 +321,46 @@ class Pdf
         return $this;
     }
 
+    public function a4(): self
+    {
+        return $this->paper('A4');
+    }
+
+    public function a3(): self
+    {
+        return $this->paper('A3');
+    }
+
+    public function a5(): self
+    {
+        return $this->paper('A5');
+    }
+
+    public function letter(): self
+    {
+        return $this->paper('Letter');
+    }
+
+    public function legal(): self
+    {
+        return $this->paper('Legal');
+    }
+
     public function orientation(string $orientation): self
     {
         $this->orientation = $orientation;
 
         return $this;
+    }
+
+    public function portrait(): self
+    {
+        return $this->orientation('portrait');
+    }
+
+    public function landscape(): self
+    {
+        return $this->orientation('landscape');
     }
 
     public function margin(string $margin): self
@@ -558,13 +559,6 @@ class Pdf
         return $this;
     }
 
-    /**
-     * Register a font for the built-in viewer UI only.
-     *
-     * This does not affect the generated PDF - style the PDF from your own
-     * Blade/CSS. The file is embedded as a base64 @font-face so the viewer
-     * chrome renders correctly without the font being installed on the client.
-     */
     public function font(?string $path = NULL, ?string $family = NULL, ?string $stack = NULL): self
     {
         $this->fontPath = $path === NULL ? NULL : $this->normalizePath($path);
@@ -574,11 +568,6 @@ class Pdf
         return $this;
     }
 
-    /**
-     * Set the viewer UI text direction ('ltr' or 'rtl').
-     *
-     * Viewer-only - it does not change the direction of the generated PDF.
-     */
     public function dir(?string $dir = NULL): self
     {
         if ($dir === NULL) {
@@ -604,10 +593,6 @@ class Pdf
         return $this->dir('ltr');
     }
 
-    /**
-     * Set the viewer UI theme: 'dark' (default), 'light', or 'auto' to follow
-     * the viewer's OS preference. Viewer-only - the PDF itself is unaffected.
-     */
     public function theme(string $theme = 'dark'): self
     {
         $normalized = strtolower(trim($theme));
@@ -627,13 +612,6 @@ class Pdf
         return $this->theme($light ? 'light' : 'dark');
     }
 
-    /**
-     * Set the viewer's favicon (browser tab icon).
-     *
-     * Accepts an emoji ('📄'), an absolute URL, a data: URI, or a path to a
-     * local image file - a local file is embedded as a data: URI so the viewer
-     * stays self-contained. Viewer-only.
-     */
     public function icon(?string $icon = NULL): self
     {
         $this->icon = $icon === NULL || trim($icon) === '' ? NULL : trim($icon);
@@ -747,9 +725,6 @@ class Pdf
         throw PdfException::binaryNotFound($this->binaryPath ?? 'storage/pdf/pdf or system PATH');
     }
 
-    /**
-     * Resolve the configured icon into a <link rel="icon"> href, or NULL.
-     */
     private function resolveIconHref(): ?string
     {
         if ($this->icon === NULL) {
@@ -768,7 +743,6 @@ class Pdf
             }
         }
 
-        // Anything else (an emoji, a short glyph) is drawn into an SVG favicon.
         return sprintf(
             'data:image/svg+xml,%s',
             rawurlencode(sprintf(
@@ -790,10 +764,6 @@ class Pdf
         };
     }
 
-    /**
-     * Ensure a .pdf extension and strip characters that would break the
-     * Content-Disposition header.
-     */
     private function normalizeFilename(string $filename): string
     {
         $filename = str_replace(['"', "\r", "\n", '\\', '/'], '', trim($filename));
@@ -848,9 +818,6 @@ class Pdf
         return NULL;
     }
 
-    /**
-     * Resolve a Laravel path helper, returning NULL outside a booted app.
-     */
     private function applicationPath(string $helper, string $suffix): ?string
     {
         if (! function_exists($helper)) {
@@ -874,11 +841,6 @@ class Pdf
         $this->tempDirectory = $config['temp_path'] ?? NULL;
     }
 
-    /**
-     * Read the pdf config, tolerating a container that is not booted yet
-     * (the config() helper exists whenever Laravel is autoloaded, but throws
-     * when no application instance has been bound).
-     */
     private function readConfig(): array
     {
         if (! function_exists('config')) {

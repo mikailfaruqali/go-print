@@ -981,19 +981,68 @@
                                     <i class="fa-solid fa-stamp ic-warning"></i> Watermark & Content Override
                                 </div>
                                 <div class="row g-3 mb-3 align-items-end">
-                                    <div class="col-12 col-md-8">
-                                        <label class="form-label" for="opt_watermark_html">Watermark HTML</label>
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="opt_watermark_html">Watermark HTML / Text</label>
                                         <input type="text" id="opt_watermark_html" class="form-control" placeholder="<h1 style='color:red;'>PAID</h1>">
                                     </div>
-                                    <div class="col-12 col-md-4">
+                                    <div class="col-6 col-md-3">
                                         <label class="form-label" for="opt_watermark_opacity">Opacity (0.0 - 1.0)</label>
                                         <input type="number" step="0.05" min="0" max="1" id="opt_watermark_opacity" class="form-control" placeholder="0.15">
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label" for="opt_watermark_behind">Watermark Layer</label>
+                                        <select id="opt_watermark_behind" class="form-select sn-select2">
+                                            <option value="">Default (Behind)</option>
+                                            <option value="1">Behind Content</option>
+                                            <option value="0">Above Content</option>
+                                        </select>
                                     </div>
                                 </div>
 
                                 <div>
                                     <label class="form-label" for="opt_content_html">Content HTML Override (Optional)</label>
                                     <textarea id="opt_content_html" class="form-control" rows="4" placeholder="Optional raw HTML to replace entire view content"></textarea>
+                                </div>
+                            </div>
+
+                            <!-- 5. Metadata & Page Offsets -->
+                            <div class="sn-form-card">
+                                <div class="sn-form-card__title">
+                                    <i class="fa-solid fa-circle-info ic-primary"></i> Document Metadata & Page Offsets
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="opt_title">Document Title</label>
+                                        <input type="text" id="opt_title" class="form-control" placeholder="e.g. Sales Invoice #1002">
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="opt_author">Author</label>
+                                        <input type="text" id="opt_author" class="form-control" placeholder="e.g. Accounting Dept">
+                                    </div>
+                                </div>
+                                <div class="row g-3 mb-3">
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="opt_subject">Subject</label>
+                                        <input type="text" id="opt_subject" class="form-control" placeholder="e.g. Monthly Statement">
+                                    </div>
+                                    <div class="col-12 col-md-6">
+                                        <label class="form-label" for="opt_keywords">Keywords</label>
+                                        <input type="text" id="opt_keywords" class="form-control" placeholder="e.g. invoice, report, finance">
+                                    </div>
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label" for="opt_page_offset">Page Number Offset</label>
+                                        <input type="number" id="opt_page_offset" class="form-control" placeholder="0">
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label" for="opt_total_offset">Total Pages Offset</label>
+                                        <input type="number" id="opt_total_offset" class="form-control" placeholder="0">
+                                    </div>
+                                    <div class="col-12 col-md-4">
+                                        <label class="form-label" for="opt_base_url">Base URL</label>
+                                        <input type="text" id="opt_base_url" class="form-control" placeholder="e.g. https://example.com">
+                                    </div>
                                 </div>
                             </div>
                         </form>
@@ -1127,6 +1176,15 @@
 
                 add('watermarkHtml', $('#opt_watermark_html').val());
                 if ($('#opt_watermark_opacity').val()) opts['watermarkOpacity'] = parseFloat($('#opt_watermark_opacity').val());
+                if ($('#opt_watermark_behind').val() !== '') opts['watermarkBehind'] = $('#opt_watermark_behind').val() === '1';
+
+                add('title', $('#opt_title').val());
+                add('author', $('#opt_author').val());
+                add('subject', $('#opt_subject').val());
+                add('keywords', $('#opt_keywords').val());
+                add('baseUrl', $('#opt_base_url').val());
+                if ($('#opt_page_offset').val()) opts['pageOffset'] = parseInt($('#opt_page_offset').val(), 10);
+                if ($('#opt_total_offset').val()) opts['totalOffset'] = parseInt($('#opt_total_offset').val(), 10);
 
                 add('contentHtml', $('#opt_content_html').val());
 
@@ -1162,6 +1220,16 @@
 
                     $('#opt_watermark_html').val(opts.watermarkHtml || '');
                     $('#opt_watermark_opacity').val(opts.watermarkOpacity !== undefined ? opts.watermarkOpacity : '');
+                    var wb = opts.watermarkBehind !== undefined ? (opts.watermarkBehind ? '1' : '0') : '';
+                    $('#opt_watermark_behind').val(wb).trigger('change');
+
+                    $('#opt_title').val(opts.title || '');
+                    $('#opt_author').val(opts.author || '');
+                    $('#opt_subject').val(opts.subject || '');
+                    $('#opt_keywords').val(opts.keywords || '');
+                    $('#opt_base_url').val(opts.baseUrl || '');
+                    $('#opt_page_offset').val(opts.pageOffset !== undefined ? opts.pageOffset : '');
+                    $('#opt_total_offset').val(opts.totalOffset !== undefined ? opts.totalOffset : '');
 
                     $('#opt_content_html').val(opts.contentHtml || '');
                 } else {
@@ -1172,6 +1240,7 @@
                     $('#select_locale').val('*').trigger('change');
                     $('#opt_paper').val('A4').trigger('change');
                     $('#opt_orientation').val('portrait').trigger('change');
+                    $('#opt_watermark_behind').val('').trigger('change');
                 }
             }
 
