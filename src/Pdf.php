@@ -6,6 +6,7 @@ namespace PDF;
 
 use Illuminate\Contracts\Support\Renderable;
 use Illuminate\Http\Response;
+use Illuminate\Support\Traits\Conditionable;
 use PDF\Exceptions\PdfException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
@@ -13,6 +14,8 @@ use Throwable;
 
 class Pdf
 {
+    use Conditionable;
+
     private string $contentHtml = '';
 
     private ?string $headerHtml = NULL;
@@ -90,6 +93,8 @@ class Pdf
     private ?string $dir = NULL;
 
     private string $theme = 'dark';
+
+    private ?string $icon = NULL;
 
     public function __construct()
     {
@@ -408,6 +413,20 @@ class Pdf
         return $this->theme($light ? 'light' : 'dark');
     }
 
+    /**
+     * Set the viewer's favicon (browser tab icon).
+     *
+     * Accepts an emoji ('📄'), an absolute URL, a data: URI, or a path to a
+     * local image file - a local file is embedded as a data: URI so the viewer
+     * stays self-contained. Viewer-only.
+     */
+    public function icon(?string $icon = NULL): self
+    {
+        $this->icon = $icon === NULL || trim($icon) === '' ? NULL : trim($icon);
+
+        return $this;
+    }
+
     public function get(): string
     {
         return $this->renderPdfToBuffer();
@@ -477,6 +496,7 @@ class Pdf
             'base64' => base64_encode($pdfBytes),
             'dir' => $this->dir ?: 'ltr',
             'theme' => $this->theme,
+            'icon' => $this->resolveIconHref(),
             'title' => $title,
         ])->render();
 
@@ -511,6 +531,49 @@ class Pdf
         }
 
         throw PdfException::binaryNotFound($this->binaryPath ?? 'storage/pdf/pdf or system PATH');
+    }
+
+    /**
+     * Resolve the configured icon into a <link rel="icon"> href, or NULL.
+     */
+    private function resolveIconHref(): ?string
+    {
+        if ($this->icon === NULL) {
+            return NULL;
+        }
+
+        if (str_starts_with($this->icon, 'data:') || preg_match('#^https?://#i', $this->icon) === 1) {
+            return $this->icon;
+        }
+
+        if (is_file($this->icon) && is_readable($this->icon)) {
+            $contents = file_get_contents($this->icon);
+
+            if ($contents !== FALSE) {
+                return sprintf('data:%s;base64,%s', $this->iconMimeType(), base64_encode($contents));
+            }
+        }
+
+        // Anything else (an emoji, a short glyph) is drawn into an SVG favicon.
+        return sprintf(
+            'data:image/svg+xml,%s',
+            rawurlencode(sprintf(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90" text-anchor="middle" x="50">%s</text></svg>',
+                htmlspecialchars($this->icon, ENT_QUOTES | ENT_XML1, 'UTF-8')
+            ))
+        );
+    }
+
+    private function iconMimeType(): string
+    {
+        return match (strtolower(pathinfo((string) $this->icon, PATHINFO_EXTENSION))) {
+            'png' => 'image/png',
+            'jpg', 'jpeg' => 'image/jpeg',
+            'gif' => 'image/gif',
+            'svg' => 'image/svg+xml',
+            'webp' => 'image/webp',
+            default => 'image/x-icon',
+        };
     }
 
     /**

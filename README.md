@@ -177,6 +177,30 @@ The viewer ships with the **sn-kit** design system (GitHub Dark / GitHub Light p
 
 Supported font formats are detected from the file extension: `.ttf`, `.otf`, `.woff`, `.woff2`.
 
+#### Viewer favicon
+
+`icon()` sets the browser-tab icon. It accepts an emoji, an absolute URL, a `data:` URI, or a path to a local image — a local file is embedded as a `data:` URI so the viewer stays self-contained.
+
+```php
+->icon('📄')                                  // emoji
+->icon(public_path('img/logo.png'))           // local file, embedded
+->icon('https://cdn.example.com/fav.ico')     // URL
+```
+
+#### Conditional chaining
+
+The builder uses Laravel's `Conditionable` trait, so `when()` / `unless()` chain fluently — useful for driving the viewer from user or tenant settings:
+
+```php
+return Pdf::make()
+    ->content($html)
+    ->withViewer()
+    ->when($user->prefersDark, fn ($pdf) => $pdf->darkMode(), fn ($pdf) => $pdf->lightMode())
+    ->when(app()->getLocale() === 'ckb', fn ($pdf) => $pdf->rtl()->font(storage_path('fonts/Rabar.ttf'), 'Rabar'))
+    ->unless($tenant->logo === null, fn ($pdf) => $pdf->icon($tenant->logo))
+    ->inline('invoice.pdf');
+```
+
 ### Full Fluent API Reference
 
 ```php
@@ -206,6 +230,9 @@ Pdf::make()
     ->font($path, $family, $stack)         // Viewer UI font
     ->dir('rtl'|'ltr')                     // Viewer UI direction (->rtl() / ->ltr())
     ->theme('dark'|'light'|'auto')         // Viewer UI theme (->darkMode() / ->lightMode())
+    ->icon('📄')                            // Viewer favicon (emoji, URL, data: URI, or file)
+    ->when($cond, fn ($pdf) => ...)        // Conditional chaining (Laravel Conditionable)
+    ->unless($cond, fn ($pdf) => ...)
     ->tempDirectory(sys_get_temp_dir())
     ->pageOffset(0)
     ->totalOffset(0)

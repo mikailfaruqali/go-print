@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ $title }}</title>
+    @if (filled($icon ?? null))
+        <link rel="icon" href="{{ $icon }}" />
+    @endif
     @if (filled($font))
         <style>
             @font-face {
@@ -21,6 +24,7 @@
            Design tokens — sn-kit (GitHub Dark), the default theme.
            ───────────────────────────────────────────────────────────── */
         :root {
+            color-scheme: dark;
             --sn-bg: #151b24;
             --sn-surface: #1b222b;
             --sn-card: #262d36;
@@ -49,6 +53,7 @@
 
         /* ─── Light theme — sn-kit GitHub Light ─── */
         [data-bs-theme='light'] {
+            color-scheme: light;
             --sn-bg: #fffefb;
             --sn-surface: #fbf8f2;
             --sn-card: #fffefc;
@@ -75,6 +80,7 @@
            server did not stamp an explicit data-bs-theme on <html>. */
         @media (prefers-color-scheme: light) {
             :root:not([data-bs-theme='dark']):not([data-bs-theme='light']) {
+                color-scheme: light;
                 --sn-bg: #fffefb;
                 --sn-surface: #fbf8f2;
                 --sn-card: #fffefc;
@@ -102,6 +108,13 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+        }
+
+        /* Paint the themed ground on <html> as well as <body>: the browser paints
+           the root element's background before body styles resolve, which is what
+           causes a white flash on load. */
+        html {
+            background: var(--sn-bg);
         }
 
         body {
@@ -148,12 +161,12 @@
             margin-inline-start: auto;
         }
 
-        /* ─── Buttons — sn-kit ghost icon buttons ─── */
+        /* ─── Buttons — sn-kit outlined icon buttons ─── */
         .btn {
             width: 34px;
             height: 34px;
             border-radius: var(--sn-radius);
-            border: 1px solid transparent;
+            border: 1px solid var(--sn-border);
             background: transparent;
             cursor: pointer;
             display: flex;
@@ -166,7 +179,7 @@
 
         .btn:hover {
             background: var(--sn-hover);
-            border-color: var(--sn-border);
+            border-color: currentColor;
         }
 
         .btn:focus-visible {
@@ -179,19 +192,18 @@
         }
 
         .btn svg {
-            width: 17px;
-            height: 17px;
-            stroke-width: 1.9;
+            width: 20px;
+            height: 20px;
+            stroke-width: 1.8;
             display: block;
             pointer-events: none;
+            overflow: visible;
         }
 
         /* Semantic icon colors, mirroring sn-kit's --sn-ic-* tokens. */
         .btn-print { color: var(--sn-ic-success); }
         .btn-download { color: var(--sn-ic-primary); }
         .btn-share { color: var(--sn-ic-warning); }
-        .btn-theme { color: var(--sn-text-muted); }
-        .btn-theme:hover { color: var(--sn-text); }
 
         #pdf-viewer-close-btn {
             color: var(--sn-ic-danger);
@@ -315,49 +327,38 @@
 
 <body>
     <div id="toolbar">
-        <button id="pdf-viewer-close-btn" class="btn" type="button" title="Close" aria-label="Close">
+        <button id="pdf-viewer-close-btn" class="btn" type="button" aria-label="Close">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
+                <path d="M18 6 6 18M6 6l12 12" />
             </svg>
         </button>
 
         <span id="doc-title">{{ $title }}</span>
 
         <div class="actions">
-            <button id="btn-theme" class="btn btn-theme" type="button" title="Toggle theme" aria-label="Toggle theme">
-                <svg id="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-                <svg id="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" hidden>
-                    <circle cx="12" cy="12" r="4" />
-                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-                </svg>
-            </button>
-
-            <button id="btn-print" class="btn btn-print" type="button" title="Print" aria-label="Print">
+            <button id="btn-print" class="btn btn-print" type="button" aria-label="Print">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="6 9 6 2 18 2 18 9" />
+                    <path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" />
                     <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                    <rect x="6" y="14" width="12" height="8" />
+                    <rect x="6" y="15" width="12" height="6" rx="1" />
+                    <circle cx="18" cy="12" r="0.9" fill="currentColor" stroke="none" />
                 </svg>
             </button>
 
-            <button id="btn-download" class="btn btn-download" type="button" title="Download" aria-label="Download">
+            <button id="btn-download" class="btn btn-download" type="button" aria-label="Download">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
+                    <path d="M12 3v12" />
+                    <path d="M7.5 10.5 12 15l4.5-4.5" />
                 </svg>
             </button>
 
-            <button id="btn-share" class="btn btn-share" type="button" title="Share" aria-label="Share">
+            <button id="btn-share" class="btn btn-share" type="button" aria-label="Share">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
                     <circle cx="18" cy="5" r="3" />
                     <circle cx="6" cy="12" r="3" />
                     <circle cx="18" cy="19" r="3" />
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
                 </svg>
             </button>
         </div>
@@ -401,7 +402,6 @@
             get btnPrint() { return document.getElementById('btn-print'); },
             get btnDownload() { return document.getElementById('btn-download'); },
             get btnShare() { return document.getElementById('btn-share'); },
-            get btnTheme() { return document.getElementById('btn-theme'); },
             get btnClose() { return document.getElementById('pdf-viewer-close-btn'); },
         };
 
@@ -417,48 +417,6 @@
             },
             toObjectUrl: function (blob) {
                 return URL.createObjectURL(blob);
-            },
-        };
-
-        var ThemeManager = {
-            STORAGE_KEY: 'pdf-viewer-theme',
-
-            current: function () {
-                var explicit = document.documentElement.getAttribute('data-bs-theme');
-                if (explicit) return explicit;
-
-                return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches
-                    ? 'light'
-                    : 'dark';
-            },
-
-            apply: function (theme) {
-                document.documentElement.setAttribute('data-bs-theme', theme);
-                document.getElementById('icon-moon').hidden = theme === 'light';
-                document.getElementById('icon-sun').hidden = theme !== 'light';
-            },
-
-            toggle: function () {
-                var next = ThemeManager.current() === 'light' ? 'dark' : 'light';
-                ThemeManager.apply(next);
-
-                try {
-                    localStorage.setItem(ThemeManager.STORAGE_KEY, next);
-                } catch (e) {
-                    // Storage unavailable (private mode / blocked) - theme still applies.
-                }
-            },
-
-            initialize: function () {
-                var stored = null;
-                try {
-                    stored = localStorage.getItem(ThemeManager.STORAGE_KEY);
-                } catch (e) {
-                    // Ignore and fall back to the server-rendered theme.
-                }
-
-                ThemeManager.apply(stored === 'light' || stored === 'dark' ? stored : ThemeManager.current());
-                DocumentElements.btnTheme.addEventListener('click', ThemeManager.toggle);
             },
         };
 
@@ -654,7 +612,6 @@
 
         var Application = {
             initialize: function () {
-                ThemeManager.initialize();
                 PdfViewer.initialize();
                 ApplicationUI.setupPrintButton();
                 ApplicationUI.setupResizeHandler();
