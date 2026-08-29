@@ -131,6 +131,52 @@ return Pdf::make()
     ->download('confidential.pdf');
 ```
 
+### Custom PDF Viewer (Font, RTL & Theme)
+
+The viewer is **opt-in** — it is only used when `withViewer()` is called *and* you return `inline()`. Without it, `inline()` streams the raw PDF to the browser's native viewer.
+
+> `font()`, `dir()` and `theme()` style **the viewer UI only** (its toolbar, title and chrome). They do not change the generated PDF — style the PDF from your own Blade/CSS.
+
+```php
+use PDF\Facades\Pdf;
+
+// Default viewer (system-ui font)
+return Pdf::make()
+    ->content($html)
+    ->withViewer()
+    ->inline('invoice.pdf');
+
+// With custom embedded font and RTL direction
+return Pdf::make()
+    ->content($html)
+    ->font(storage_path('fonts/NotoSans-Regular.ttf'), 'Noto Sans')
+    ->dir('rtl')
+    ->withViewer()
+    ->inline('invoice.pdf');
+
+// Kurdish / Arabic (RTL with font and custom CSS font-stack)
+return Pdf::make()
+    ->content($html)
+    ->font(storage_path('fonts/Rabar.ttf'), 'Rabar', "'Rabar', 'Noto Sans Arabic', sans-serif")
+    ->dir('rtl')
+    ->withViewer()
+    ->inline('invoice.pdf');
+```
+
+#### Viewer theme (light / dark)
+
+The viewer ships with the **sn-kit** design system (GitHub Dark / GitHub Light palettes) and defaults to dark. The theme is set server-side and can also be toggled by the user from the toolbar — their choice is remembered in `localStorage`.
+
+```php
+->theme('dark')      // default
+->theme('light')
+->theme('auto')      // follow the viewer's OS preference
+->darkMode()         // alias for theme('dark')
+->lightMode()        // alias for theme('light')
+```
+
+Supported font formats are detected from the file extension: `.ttf`, `.otf`, `.woff`, `.woff2`.
+
 ### Full Fluent API Reference
 
 ```php
@@ -155,6 +201,12 @@ Pdf::make()
     ->watermarkOpacity(0.3)
     ->watermarkBehind(true)
     ->scale(1.0)                           // 0.1 to 2.0
+    ->preferCssPageSize(true)              // Honour @page size in CSS instead of ->paper()
+    ->withViewer()                         // Opt in to the built-in viewer for ->inline()
+    ->font($path, $family, $stack)         // Viewer UI font
+    ->dir('rtl'|'ltr')                     // Viewer UI direction (->rtl() / ->ltr())
+    ->theme('dark'|'light'|'auto')         // Viewer UI theme (->darkMode() / ->lightMode())
+    ->tempDirectory(sys_get_temp_dir())
     ->pageOffset(0)
     ->totalOffset(0)
     ->title('Invoice #1001')

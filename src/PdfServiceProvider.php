@@ -24,6 +24,8 @@ class PdfServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->loadViewsFrom(__DIR__ . '/../resources/views', 'pdf');
+
         $this->registerPublishing();
         $this->registerCommands();
     }
@@ -34,6 +36,10 @@ class PdfServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/../config/pdf.php' => config_path('pdf.php'),
             ], 'pdf-config');
+
+            $this->publishes([
+                __DIR__ . '/../resources/views' => resource_path('views/vendor/pdf'),
+            ], 'pdf-views');
         }
     }
 

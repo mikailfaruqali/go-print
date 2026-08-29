@@ -9,6 +9,7 @@ use Illuminate\Http\Response;
 use PDF\Exceptions\PdfException;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 class Pdf
 {
@@ -66,15 +67,29 @@ class Pdf
 
     private ?string $baseUrl = NULL;
 
+    private ?bool $preferCssPageSize = NULL;
+
     private bool $quiet = TRUE;
 
-    private ?int $timeout;
+    private ?int $timeout = 120;
 
-    private ?string $chromePath;
+    private ?string $chromePath = NULL;
 
-    private ?string $binaryPath;
+    private ?string $binaryPath = NULL;
 
-    private ?string $tempDirectory;
+    private ?string $tempDirectory = NULL;
+
+    private bool $withViewer = FALSE;
+
+    private ?string $fontPath = NULL;
+
+    private ?string $fontFamily = NULL;
+
+    private ?string $fontStack = NULL;
+
+    private ?string $dir = NULL;
+
+    private string $theme = 'dark';
 
     public function __construct()
     {
@@ -226,6 +241,13 @@ class Pdf
         return $this;
     }
 
+    public function preferCssPageSize(bool $prefer = TRUE): self
+    {
+        $this->preferCssPageSize = $prefer;
+
+        return $this;
+    }
+
     public function pageOffset(int $offset): self
     {
         $this->pageOffset = $offset;
@@ -310,6 +332,82 @@ class Pdf
         return $this;
     }
 
+    public function withViewer(bool $withViewer = TRUE): self
+    {
+        $this->withViewer = $withViewer;
+
+        return $this;
+    }
+
+    /**
+     * Register a font for the built-in viewer UI only.
+     *
+     * This does not affect the generated PDF - style the PDF from your own
+     * Blade/CSS. The file is embedded as a base64 @font-face so the viewer
+     * chrome renders correctly without the font being installed on the client.
+     */
+    public function font(?string $path = NULL, ?string $family = NULL, ?string $stack = NULL): self
+    {
+        $this->fontPath = $path === NULL ? NULL : $this->normalizePath($path);
+        $this->fontFamily = $family;
+        $this->fontStack = $stack;
+
+        return $this;
+    }
+
+    /**
+     * Set the viewer UI text direction ('ltr' or 'rtl').
+     *
+     * Viewer-only - it does not change the direction of the generated PDF.
+     */
+    public function dir(?string $dir = NULL): self
+    {
+        if ($dir === NULL) {
+            $this->dir = NULL;
+
+            return $this;
+        }
+
+        $normalized = strtolower(trim($dir));
+
+        $this->dir = in_array($normalized, ['ltr', 'rtl', 'auto'], TRUE) ? $normalized : 'ltr';
+
+        return $this;
+    }
+
+    public function rtl(): self
+    {
+        return $this->dir('rtl');
+    }
+
+    public function ltr(): self
+    {
+        return $this->dir('ltr');
+    }
+
+    /**
+     * Set the viewer UI theme: 'dark' (default), 'light', or 'auto' to follow
+     * the viewer's OS preference. Viewer-only - the PDF itself is unaffected.
+     */
+    public function theme(string $theme = 'dark'): self
+    {
+        $normalized = strtolower(trim($theme));
+
+        $this->theme = in_array($normalized, ['dark', 'light', 'auto'], TRUE) ? $normalized : 'dark';
+
+        return $this;
+    }
+
+    public function darkMode(bool $dark = TRUE): self
+    {
+        return $this->theme($dark ? 'dark' : 'light');
+    }
+
+    public function lightMode(bool $light = TRUE): self
+    {
+        return $this->theme($light ? 'light' : 'dark');
+    }
+
     public function get(): string
     {
         return $this->renderPdfToBuffer();
@@ -319,8 +417,8 @@ class Pdf
     {
         $directory = dirname($path);
 
-        if (! is_dir($directory)) {
-            mkdir($directory, 0755, TRUE);
+        if (! is_dir($directory) && ! mkdir($directory, 0755, TRUE) && ! is_dir($directory)) {
+            throw PdfException::saveFailed($path);
         }
 
         $pdfData = $this->get();
@@ -339,35 +437,64 @@ class Pdf
 
     public function download(string $filename = 'document.pdf'): Response
     {
-        $formattedFilename = str_ends_with(strtolower($filename), '.pdf') ? $filename : "{$filename}.pdf";
+        $formattedFilename = $this->normalizeFilename($filename);
 
         return new Response($this->get(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => "attachment; filename=\"{$formattedFilename}\"",
+            'Content-Disposition' => sprintf('attachment; filename="%s"', $formattedFilename),
         ]);
     }
 
     public function inline(string $filename = 'document.pdf'): Response
     {
-        $formattedFilename = str_ends_with(strtolower($filename), '.pdf') ? $filename : "{$filename}.pdf";
+        if ($this->withViewer) {
+            return $this->renderViewer($filename);
+        }
 
         return new Response($this->get(), 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => "inline; filename=\"{$formattedFilename}\"",
+            'Content-Disposition' => sprintf('inline; filename="%s"', $this->normalizeFilename($filename)),
+        ]);
+    }
+
+    public function renderViewer(string $filename = 'document.pdf'): Response
+    {
+        $formattedFilename = $this->normalizeFilename($filename);
+        $pdfBytes = $this->get();
+        $fontDetails = $this->resolveViewerFontDetails();
+
+        $title = $this->title
+            ?: $this->extractTitleFromHtml($this->contentHtml)
+            ?: pathinfo($formattedFilename, PATHINFO_FILENAME);
+
+        $html = view('pdf::pdf-viewer', [
+            'font' => $fontDetails['base64'],
+            'fontMime' => $this->fontMimeSubtype(),
+            'fontFormat' => $this->fontFormat(),
+            'fontFamily' => $fontDetails['family'],
+            'fontStack' => $fontDetails['stack'],
+            'filename' => $formattedFilename,
+            'base64' => base64_encode($pdfBytes),
+            'dir' => $this->dir ?: 'ltr',
+            'theme' => $this->theme,
+            'title' => $title,
+        ])->render();
+
+        return new Response($html, 200, [
+            'Content-Type' => 'text/html; charset=UTF-8',
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 
     public function resolveBinaryPath(): string
     {
-        if ($this->binaryPath && file_exists($this->binaryPath)) {
-            return $this->binaryPath;
-        }
+        $binaryName = PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf';
 
         $candidates = [
             $this->binaryPath,
-            function_exists('storage_path') ? storage_path('pdf' . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf')) : NULL,
-            function_exists('base_path') ? base_path('pdf' . DIRECTORY_SEPARATOR . (PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf')) : NULL,
-            function_exists('base_path') ? base_path(PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf') : NULL,
+            $this->applicationPath('storage_path', 'pdf' . DIRECTORY_SEPARATOR . $binaryName),
+            $this->applicationPath('base_path', 'pdf' . DIRECTORY_SEPARATOR . $binaryName),
+            $this->applicationPath('base_path', $binaryName),
         ];
 
         foreach ($candidates as $candidate) {
@@ -377,7 +504,7 @@ class Pdf
         }
 
         $executableFinder = new ExecutableFinder;
-        $inPath = $executableFinder->find(PHP_OS_FAMILY === 'Windows' ? 'pdf.exe' : 'pdf');
+        $inPath = $executableFinder->find($binaryName);
 
         if ($inPath) {
             return $inPath;
@@ -386,14 +513,106 @@ class Pdf
         throw PdfException::binaryNotFound($this->binaryPath ?? 'storage/pdf/pdf or system PATH');
     }
 
+    /**
+     * Ensure a .pdf extension and strip characters that would break the
+     * Content-Disposition header.
+     */
+    private function normalizeFilename(string $filename): string
+    {
+        $filename = str_replace(['"', "\r", "\n", '\\', '/'], '', trim($filename));
+
+        if ($filename === '') {
+            $filename = 'document.pdf';
+        }
+
+        return str_ends_with(strtolower($filename), '.pdf') ? $filename : "{$filename}.pdf";
+    }
+
+    private function resolveViewerFontDetails(): array
+    {
+        $fontBase64 = NULL;
+
+        $primaryFamily = match (TRUE) {
+            $this->fontFamily !== NULL && $this->fontFamily !== '' => $this->fontFamily,
+            $this->fontStack !== NULL && $this->fontStack !== '' => trim(explode(',', $this->fontStack)[0], " '\""),
+            $this->fontPath !== NULL && $this->fontPath !== '' => pathinfo($this->fontPath, PATHINFO_FILENAME),
+            default => 'system-ui',
+        };
+
+        $fontStack = match (TRUE) {
+            $this->fontStack !== NULL && $this->fontStack !== '' => $this->fontStack,
+            $primaryFamily !== 'system-ui' => sprintf("'%s', system-ui, sans-serif", $primaryFamily),
+            default => 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        };
+
+        if ($this->fontPath !== NULL && is_file($this->fontPath) && is_readable($this->fontPath)) {
+            $contents = file_get_contents($this->fontPath);
+
+            if ($contents !== FALSE) {
+                $fontBase64 = base64_encode($contents);
+            }
+        }
+
+        return [
+            'base64' => $fontBase64,
+            'family' => $primaryFamily,
+            'stack' => $fontStack,
+        ];
+    }
+
+    private function extractTitleFromHtml(string $html): ?string
+    {
+        if (preg_match('/<title[^>]*>(.*?)<\/title>/is', $html, $matches)) {
+            $title = html_entity_decode(strip_tags($matches[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+            return preg_replace('/[^\p{L}\p{N}\s_-]+/u', '', trim($title));
+        }
+
+        return NULL;
+    }
+
+    /**
+     * Resolve a Laravel path helper, returning NULL outside a booted app.
+     */
+    private function applicationPath(string $helper, string $suffix): ?string
+    {
+        if (! function_exists($helper)) {
+            return NULL;
+        }
+
+        try {
+            return $helper($suffix);
+        } catch (Throwable) {
+            return NULL;
+        }
+    }
+
     private function initializeDefaults(): void
     {
-        $config = function_exists('config') ? config('pdf', []) : [];
+        $config = $this->readConfig();
 
         $this->binaryPath = $config['binary_path'] ?? NULL;
         $this->chromePath = $config['chrome_path'] ?? NULL;
-        $this->timeout = $config['timeout'] ?? 120;
+        $this->timeout = isset($config['timeout']) ? (int) $config['timeout'] : 120;
         $this->tempDirectory = $config['temp_path'] ?? NULL;
+    }
+
+    /**
+     * Read the pdf config, tolerating a container that is not booted yet
+     * (the config() helper exists whenever Laravel is autoloaded, but throws
+     * when no application instance has been bound).
+     */
+    private function readConfig(): array
+    {
+        if (! function_exists('config')) {
+            return [];
+        }
+
+        try {
+            return (array) config('pdf', []);
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     private function renderHtml(string|Renderable $html): string
@@ -401,6 +620,38 @@ class Pdf
         return match (TRUE) {
             $html instanceof Renderable => $html->render(),
             default => $html,
+        };
+    }
+
+    private function normalizePath(string $path): string
+    {
+        return str_replace('\\', '/', $path);
+    }
+
+    private function fontExtension(): string
+    {
+        return $this->fontPath === NULL
+            ? 'ttf'
+            : strtolower(pathinfo($this->fontPath, PATHINFO_EXTENSION));
+    }
+
+    private function fontMimeSubtype(): string
+    {
+        return match ($this->fontExtension()) {
+            'woff2' => 'woff2',
+            'woff' => 'woff',
+            'otf' => 'opentype',
+            default => 'truetype',
+        };
+    }
+
+    private function fontFormat(): string
+    {
+        return match ($this->fontExtension()) {
+            'woff2' => 'woff2',
+            'woff' => 'woff',
+            'otf' => 'opentype',
+            default => 'truetype',
         };
     }
 
@@ -528,6 +779,10 @@ class Pdf
                 $command[] = (string) $this->scale;
             }
 
+            if ($this->preferCssPageSize === TRUE) {
+                $command[] = '--prefer-css-page-size';
+            }
+
             if ($this->pageOffset !== NULL && $this->pageOffset !== 0) {
                 $command[] = '--page-offset';
                 $command[] = (string) $this->pageOffset;
@@ -578,7 +833,7 @@ class Pdf
             }
 
             $process = new Process($command);
-            $process->setTimeout($this->timeout ?? 120);
+            $process->setTimeout($this->timeout === NULL ? NULL : (float) $this->timeout);
 
             if (! $hasFragments) {
                 $process->setInput($this->contentHtml);
@@ -593,7 +848,16 @@ class Pdf
                 );
             }
 
-            return $process->getOutput();
+            $output = $process->getOutput();
+
+            if ($output === '' || ! str_starts_with($output, '%PDF')) {
+                throw PdfException::executionFailed(
+                    $process->getErrorOutput() ?: 'The pdf binary returned no PDF data on stdout.',
+                    (int) $process->getExitCode()
+                );
+            }
+
+            return $output;
         } finally {
             foreach ($tempFiles as $tempFile) {
                 if (file_exists($tempFile)) {
@@ -611,7 +875,9 @@ class Pdf
             $filePath = $dir . DIRECTORY_SEPARATOR . uniqid($prefix, TRUE) . '.html';
         }
 
-        file_put_contents($filePath, $content);
+        if (file_put_contents($filePath, $content) === FALSE) {
+            throw PdfException::saveFailed($filePath);
+        }
 
         return $filePath;
     }
