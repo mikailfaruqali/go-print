@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace PDF\Console;
 
 use Illuminate\Console\Command;
-use PDF\Pdf;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
@@ -52,13 +51,9 @@ class CheckCommand extends Command
         return self::FAILURE;
     }
 
-    /**
-     * @return array{ok: bool, details: string}
-     */
     private function checkPdfBinary(): array
     {
         try {
-            /** @var Pdf $builder */
             $builder = resolve('pdf');
             $binaryPath = $builder->resolveBinaryPath();
 
@@ -93,9 +88,6 @@ class CheckCommand extends Command
         }
     }
 
-    /**
-     * @return array{ok: bool, details: string}
-     */
     private function checkChromeInstallation(): array
     {
         $chromePath = config('pdf.chrome_path');

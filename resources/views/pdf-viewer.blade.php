@@ -18,9 +18,6 @@
     @endif
 
     <style>
-        /* ─────────────────────────────────────────────────────────────
-           Design tokens — sn-kit (GitHub Dark), the default theme.
-           ───────────────────────────────────────────────────────────── */
         :root {
             color-scheme: dark;
             --sn-bg: #151b24;
@@ -49,7 +46,6 @@
             --sn-toolbar-h: 52px;
         }
 
-        /* ─── Light theme — sn-kit GitHub Light ─── */
         [data-bs-theme='light'] {
             color-scheme: light;
             --sn-bg: #fffefb;
@@ -74,8 +70,6 @@
             --sn-scroll-thumb-hover: #c4b59f;
         }
 
-        /* Theme "auto": follow the viewer's OS preference. Only applies when the
-           server did not stamp an explicit data-bs-theme on <html>. */
         @media (prefers-color-scheme: light) {
             :root:not([data-bs-theme='dark']):not([data-bs-theme='light']) {
                 color-scheme: light;
@@ -108,9 +102,6 @@
             box-sizing: border-box;
         }
 
-        /* Paint the themed ground on <html> as well as <body>: the browser paints
-           the root element's background before body styles resolve, which is what
-           causes a white flash on load. */
         html {
             background: var(--sn-bg);
         }
@@ -123,7 +114,6 @@
             color: var(--sn-text);
         }
 
-        /* ─── Toolbar ─── */
         #toolbar {
             position: fixed;
             top: 0;
@@ -159,7 +149,6 @@
             margin-inline-start: auto;
         }
 
-        /* ─── Buttons — sn-kit outlined icon buttons ─── */
         .btn {
             width: 34px;
             height: 34px;
@@ -198,7 +187,6 @@
             overflow: visible;
         }
 
-        /* Semantic icon colors, mirroring sn-kit's --sn-ic-* tokens. */
         .btn-print { color: var(--sn-ic-success); }
         .btn-download { color: var(--sn-ic-primary); }
         .btn-share { color: var(--sn-ic-warning); }
@@ -228,7 +216,6 @@
             .btn { transition: none; }
         }
 
-        /* ─── Document surface ─── */
         #pdf-container {
             position: fixed;
             top: var(--sn-toolbar-h);
@@ -273,7 +260,6 @@
             max-width: 100%;
         }
 
-        /* ─── Loading & error states ─── */
         #loading,
         #error-screen {
             position: fixed;
@@ -419,7 +405,6 @@
         };
 
         var PdfRenderer = {
-            // CSS width (in pixels) a page should occupy on screen.
             displayWidth: function (page) {
                 var available = DocumentElements.container.clientWidth - 24;
                 var pageWidth = page.getViewport({ scale: 1 }).width;
@@ -428,7 +413,6 @@
                     return available;
                 }
 
-                // Cap desktop pages at 1.5x natural size, never wider than the container.
                 return Math.min(pageWidth * 1.5, available);
             },
 
@@ -438,7 +422,6 @@
                     var cssWidth = PdfRenderer.displayWidth(page);
                     var naturalWidth = page.getViewport({ scale: 1 }).width;
 
-                    // Rasterise at device resolution, present at CSS size.
                     var viewport = page.getViewport({ scale: (cssWidth / naturalWidth) * dpr });
 
                     var canvas = document.createElement('canvas');
@@ -523,15 +506,12 @@
                     return;
                 }
 
-                // Inside an iframe: try the host's Bootstrap modal, then fall back
-                // to a postMessage the host page can listen for.
                 try {
                     if (window.parent.jQuery) {
                         window.parent.jQuery('.modal').modal('hide');
                         return;
                     }
                 } catch (e) {
-                    // Cross-origin parent - fall through to postMessage.
                 }
 
                 window.parent.postMessage({ type: 'pdf-viewer:close' }, '*');
@@ -581,7 +561,6 @@
                 }
             },
 
-            // Re-rasterise pages when the viewport width changes so text stays sharp.
             setupResizeHandler: function () {
                 var lastWidth = window.innerWidth;
                 var timer = null;

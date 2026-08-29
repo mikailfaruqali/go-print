@@ -183,7 +183,6 @@ class PdfTemplateController extends Controller
 
         $pdf = Pdf::make();
 
-        // Content from the options wins and is applied (as Blade) by applyTemplateOptions() below.
         if (blank($options['contentHtml'] ?? NULL)) {
             if ($viewName !== '' && view()->exists($viewName)) {
                 try {
@@ -201,13 +200,6 @@ class PdfTemplateController extends Controller
         return $pdf->withViewer()->inline('template-preview.pdf');
     }
 
-    /**
-     * Resolve the supported template locales from configuration.
-     * Supports closures, callable arrays/strings, Collections, and regular arrays.
-     * Always ensures the '*' wildcard (all/fallback) is at the first position.
-     *
-     * @return array<int|string, string>
-     */
     protected function resolveSupportedLocales(): array
     {
         $locales = config('pdf.locales', ['en', 'ar', 'ckb', 'ku', 'fr', 'de', 'es', 'tr', 'fa']);

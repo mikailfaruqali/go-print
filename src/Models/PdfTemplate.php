@@ -13,17 +13,18 @@ class PdfTemplate
         $resolvedLocale = $locale ?? (function_exists('app') ? app()->getLocale() : 'en');
 
         $rows = DB::table('pdf_templates')
-            ->where('view', $view)
+            ->whereIn('view', [$view, '*', 'all'])
             ->whereIn('locale', [$resolvedLocale, '*', 'all'])
-            ->get(['locale', 'options']);
+            ->get(['view', 'locale', 'options']);
 
         if ($rows->isEmpty()) {
             return [];
         }
 
-        $row = $rows->firstWhere('locale', $resolvedLocale)
-            ?? $rows->firstWhere('locale', '*')
-            ?? $rows->firstWhere('locale', 'all')
+        $row = $rows->first(fn ($r): bool => $r->view === $view && $r->locale === $resolvedLocale)
+            ?? $rows->first(fn ($r): bool => $r->view === $view && in_array($r->locale, ['*', 'all'], TRUE))
+            ?? $rows->first(fn ($r): bool => in_array($r->view, ['*', 'all'], TRUE) && $r->locale === $resolvedLocale)
+            ?? $rows->first(fn ($r): bool => in_array($r->view, ['*', 'all'], TRUE) && in_array($r->locale, ['*', 'all'], TRUE))
             ?? $rows->first();
 
         $raw = $row?->options;

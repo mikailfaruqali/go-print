@@ -846,7 +846,11 @@
                             <tr class="template-row" data-id="{{ $t->id }}" data-view="{{ $t->view }}" data-locale="{{ $t->locale }}">
                                 <td>
                                     <div class="fw-semibold text-truncate" style="max-width: 380px;" title="{{ $t->view }}">
-                                        {{ $t->view }}
+                                        @if($t->view === '*' || $t->view === 'all')
+                                            <span class="sn-badge-locale me-1" style="background: var(--sn-hover); border-color: var(--sn-border);">*</span> <span class="text-muted">All Views (Fallback)</span>
+                                        @else
+                                            {{ $t->view }}
+                                        @endif
                                     </div>
                                 </td>
                                 <td>
@@ -931,7 +935,7 @@
                                         <select id="select_view" class="form-select sn-select2">
                                             <option value="">-- Select or type view name --</option>
                                             @foreach($availableViews as $v)
-                                                <option value="{{ $v }}">{{ $v }}</option>
+                                                <option value="{{ $v }}">{{ $v === '*' ? '* (All Views / Global Fallback)' : $v }}</option>
                                             @endforeach
                                         </select>
                                     </div>
