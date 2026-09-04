@@ -444,6 +444,52 @@
             gap: 8px;
         }
 
+        /* Explanatory text inside a form card. Deliberately not .form-label,
+           which is uppercased and sized for field captions. */
+        .sn-form-hint {
+            font-size: 12.5px;
+            line-height: 1.6;
+            color: var(--sn-text-muted);
+            margin-bottom: 14px;
+        }
+
+        .sn-form-hint code {
+            font-size: 12px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            background: var(--sn-form-input-bg);
+            border: 1px solid var(--sn-form-border);
+            color: var(--sn-text);
+        }
+
+        /* Runtime CSS variable rows: the remove button aligns with the inputs
+           on desktop, and goes full-width under them once the row stacks. */
+        .css-var-row__remove {
+            display: flex;
+            align-items: flex-end;
+        }
+
+        .css-var-row__remove .sn-btn {
+            width: 100%;
+            min-width: 0;
+            padding: 0 12px;
+        }
+
+        @media (min-width: 768px) {
+            .css-var-row__remove .sn-btn {
+                height: var(--sn-form-height);
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .css-var-row {
+                border: 1px solid var(--sn-form-border);
+                border-radius: var(--sn-radius);
+                padding: 12px;
+                margin-bottom: 12px !important;
+            }
+        }
+
         .form-label {
             font-size: 12px;
             font-weight: 600;
@@ -990,9 +1036,17 @@
                                 </div>
 
                                 <div class="row g-3 mb-3">
-                                    <div class="col-12 col-md-4">
+                                    <div class="col-6 col-md-3">
                                         <label class="form-label" for="opt_scale">Scale (0.1 - 2.0)</label>
                                         <input type="number" step="0.05" min="0.1" max="2" id="opt_scale" class="form-control" placeholder="1.0">
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <label class="form-label" for="opt_smart_shrinking">Smart Shrinking</label>
+                                        <select id="opt_smart_shrinking" class="form-select sn-select2">
+                                            <option value="">Default (Disabled)</option>
+                                            <option value="1">Enabled</option>
+                                            <option value="0">Disabled</option>
+                                        </select>
                                     </div>
                                 </div>
 
@@ -1136,6 +1190,23 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- 6. Runtime CSS Variables -->
+                            <div class="sn-form-card">
+                                <div class="sn-form-card__title">
+                                    <i class="fa-solid fa-palette ic-primary"></i> Runtime CSS Variables
+                                </div>
+                                <p class="sn-form-hint">
+                                    Custom properties injected into the content, header, footer and watermark at
+                                    render time. They override any <code>:root</code> value the document defines.
+                                    The leading <code>--</code> is optional.
+                                </p>
+                                <div id="css-vars-rows"></div>
+                                <button type="button" class="sn-btn" id="btn-add-css-var">
+                                    <i class="fa-solid fa-plus ic-success"></i>
+                                    <span>Add Variable</span>
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -1195,6 +1266,18 @@
                 allowClear: false
             });
 
+            $('#opt_smart_shrinking').select2({
+                dropdownParent: $('#templateModal'),
+                minimumResultsForSearch: Infinity,
+                allowClear: false
+            });
+
+            $('#opt_watermark_behind').select2({
+                dropdownParent: $('#templateModal'),
+                minimumResultsForSearch: Infinity,
+                allowClear: false
+            });
+
             // Theme Management
             var currentTheme = localStorage.getItem('sn-pdf-theme') || 'dark';
             applyTheme(currentTheme);
@@ -1240,6 +1323,55 @@
                 }
             });
 
+            // Runtime CSS Variables rows
+            function addCssVarRow(name, value) {
+                var $row = $(
+                    '<div class="row g-2 g-md-3 mb-2 css-var-row">' +
+                    '<div class="col-12 col-md-5">' +
+                    '<label class="form-label d-md-none">Variable</label>' +
+                    '<input type="text" class="form-control css-var-name" placeholder="--sn-accent">' +
+                    '</div>' +
+                    '<div class="col-12 col-md-6">' +
+                    '<label class="form-label d-md-none">Value</label>' +
+                    '<input type="text" class="form-control css-var-value" placeholder="#58a6ff">' +
+                    '</div>' +
+                    '<div class="col-12 col-md-1 css-var-row__remove">' +
+                    '<button type="button" class="sn-btn sn-btn-danger btn-remove-css-var" aria-label="Remove variable">' +
+                    '<i class="fa-solid fa-trash"></i>' +
+                    '<span class="d-md-none">Remove</span>' +
+                    '</button>' +
+                    '</div>' +
+                    '</div>'
+                );
+
+                $row.find('.css-var-name').val(name || '');
+                $row.find('.css-var-value').val(value || '');
+                $('#css-vars-rows').append($row);
+            }
+
+            $('#btn-add-css-var').on('click', function() {
+                addCssVarRow('', '');
+            });
+
+            $(document).on('click', '.btn-remove-css-var', function() {
+                $(this).closest('.css-var-row').remove();
+            });
+
+            function collectCssVariables() {
+                var vars = {};
+
+                $('#css-vars-rows .css-var-row').each(function() {
+                    var name = String($(this).find('.css-var-name').val() || '').trim();
+                    var value = String($(this).find('.css-var-value').val() || '').trim();
+
+                    if (name !== '' && value !== '') {
+                        vars[name.replace(/^-+/, '')] = value;
+                    }
+                });
+
+                return vars;
+            }
+
             // Collect options
             function collectOptions() {
                 var opts = {};
@@ -1252,6 +1384,7 @@
                 add('pageHeight', $('#opt_page_height').val());
                 add('orientation', $('#opt_orientation').val());
                 if ($('#opt_scale').val()) opts['scale'] = parseFloat($('#opt_scale').val());
+                if ($('#opt_smart_shrinking').val() !== '') opts['smartShrinking'] = $('#opt_smart_shrinking').val() === '1';
                 add('marginTop', $('#opt_margin_top').val());
                 add('marginBottom', $('#opt_margin_bottom').val());
                 add('marginLeft', $('#opt_margin_left').val());
@@ -1281,6 +1414,9 @@
 
                 add('contentHtml', $('#opt_content_html').val());
 
+                var cssVariables = collectCssVariables();
+                if (Object.keys(cssVariables).length > 0) opts['cssVariables'] = cssVariables;
+
                 return opts;
             }
 
@@ -1298,6 +1434,8 @@
                     $('#opt_page_height').val(opts.pageHeight || '');
                     $('#opt_orientation').val(opts.orientation || 'portrait').trigger('change');
                     $('#opt_scale').val(opts.scale !== undefined ? opts.scale : '');
+                    var ss = opts.smartShrinking !== undefined ? (opts.smartShrinking ? '1' : '0') : '';
+                    $('#opt_smart_shrinking').val(ss).trigger('change');
                     $('#opt_margin_top').val(opts.marginTop || '');
                     $('#opt_margin_bottom').val(opts.marginBottom || '');
                     $('#opt_margin_left').val(opts.marginLeft || '');
@@ -1327,6 +1465,12 @@
                     $('#opt_total_offset').val(opts.totalOffset !== undefined ? opts.totalOffset : '');
 
                     $('#opt_content_html').val(opts.contentHtml || '');
+
+                    $('#css-vars-rows').empty();
+                    var cssVariables = opts.cssVariables || {};
+                    Object.keys(cssVariables).forEach(function(name) {
+                        addCssVarRow(name, cssVariables[name]);
+                    });
                 } else {
                     $('#template_id').val('');
                     $('#modalTitle').text('New Template');
@@ -1338,6 +1482,8 @@
                     $('#opt_page_height').val('');
                     $('#opt_orientation').val('portrait').trigger('change');
                     $('#opt_watermark_behind').val('').trigger('change');
+                    $('#opt_smart_shrinking').val('').trigger('change');
+                    $('#css-vars-rows').empty();
                 }
             }
 

@@ -294,6 +294,7 @@ func (j *job) build(contentHTML, headerHTML, footerHTML, watermarkHTML string) (
 			MarginRightInches:  g.marginRight,
 			Landscape:          g.landscape,
 			Scale:              j.cfg.scale,
+			SmartShrink:        j.cfg.smartShrink,
 			PreferCSSPageSize:  j.cfg.preferCSSPageSize,
 			BaseDir:            j.baseDir,
 			Timeout:            j.timeout(),

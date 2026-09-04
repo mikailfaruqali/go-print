@@ -155,7 +155,12 @@ type RenderOptions struct {
 	Landscape          bool
 	Scale              float64
 	PreferCSSPageSize  bool
-	Timeout            time.Duration
+	// SmartShrink measures the laid-out content and shrinks the render scale
+	// just enough to bring overflowing width back inside the printable area,
+	// the way wkhtmltopdf's --enable-smart-shrinking behaves. It only ever
+	// scales down, and never below MinSmartShrinkScale.
+	SmartShrink bool
+	Timeout     time.Duration
 	// BaseDir is the directory relative URLs in the HTML resolve against.
 	BaseDir string
 }
@@ -346,6 +351,19 @@ func (cr *ChromeRenderer) renderPDF(htmlContent string, opts RenderOptions, page
 			return waitForAssets(ctx)
 		}),
 		chromedp.ActionFunc(func(ctx context.Context) error {
+			if !opts.SmartShrink {
+				return nil
+			}
+			factor, err := smartShrinkFactor(ctx, opts)
+			if err != nil {
+				// Measurement is best-effort: a page that refuses to report a
+				// width still prints, just at the requested scale.
+				return nil
+			}
+			scale *= factor
+			return nil
+		}),
+		chromedp.ActionFunc(func(ctx context.Context) error {
 			params := page.PrintToPDF().
 				WithPrintBackground(true).
 				WithPreferCSSPageSize(opts.PreferCSSPageSize).
@@ -443,6 +461,64 @@ func readStream(ctx context.Context, handle cdpio.StreamHandle) ([]byte, error) 
 // waitForAssets blocks until webfonts are loaded and every image has either
 // decoded or failed. Uses requestAnimationFrame inside the browser event loop
 // rather than an arbitrary wall-clock sleep.
+// cssPixelsPerInch is the fixed ratio Chrome's print layout uses to map CSS
+// pixels onto paper.
+const cssPixelsPerInch = 96.0
+
+// MinSmartShrinkScale bounds how far smart shrinking may scale a page down.
+// Past this point the text stops being legible and a clipped page is the more
+// honest result.
+const MinSmartShrinkScale = 0.5
+
+// smartShrinkFactor measures the widest laid-out content in the page and
+// returns the multiplier that brings it back inside the printable width. It
+// returns 1.0 when the content already fits, so callers can apply it blindly.
+func smartShrinkFactor(ctx context.Context, opts RenderOptions) (float64, error) {
+	paperWidth := opts.PaperWidthInches
+	if opts.Landscape {
+		paperWidth = opts.PaperHeightInches
+	}
+
+	printableInches := paperWidth - opts.MarginLeftInches - opts.MarginRightInches
+	if printableInches <= 0 {
+		return 1.0, nil
+	}
+	printablePx := printableInches * cssPixelsPerInch
+
+	// scrollWidth on the root elements catches block overflow; the element scan
+	// catches a wide table or <pre> that overflows its own container without
+	// widening the document.
+	const script = `(() => {
+  const roots = [document.documentElement, document.body].filter(Boolean);
+  let widest = 0;
+  for (const r of roots) {
+    widest = Math.max(widest, r.scrollWidth || 0);
+  }
+  for (const el of document.body ? document.body.querySelectorAll('*') : []) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0) {
+      widest = Math.max(widest, rect.right);
+    }
+    widest = Math.max(widest, el.scrollWidth || 0);
+  }
+  return widest;
+})()`
+
+	var widest float64
+	if err := chromedp.Evaluate(script, &widest).Do(ctx); err != nil {
+		return 1.0, err
+	}
+	if widest <= 0 || widest <= printablePx {
+		return 1.0, nil
+	}
+
+	factor := printablePx / widest
+	if factor < MinSmartShrinkScale {
+		factor = MinSmartShrinkScale
+	}
+	return factor, nil
+}
+
 func waitForAssets(ctx context.Context) error {
 	const script = `
 new Promise((resolve) => {

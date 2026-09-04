@@ -238,6 +238,45 @@ class PdfTemplateController extends Controller
         return ['*' => '*'] + $cleanLocales;
     }
 
+    /**
+     * Accept either a { name: value } map or a list of { name, value } rows
+     * (as posted by the template studio) and return a normalized map keyed by
+     * '--custom-property'.
+     */
+    private function sanitizeCssVariables(mixed $variables): array
+    {
+        if (is_string($variables)) {
+            $variables = json_decode($variables, TRUE);
+        }
+
+        if (! is_array($variables)) {
+            return [];
+        }
+
+        $clean = [];
+
+        foreach ($variables as $key => $entry) {
+            [$name, $value] = is_array($entry)
+                ? [$entry['name'] ?? '', $entry['value'] ?? '']
+                : [$key, $entry];
+
+            if (! is_string($name) || is_array($value)) {
+                continue;
+            }
+
+            $safeName = trim(preg_replace('/[^A-Za-z0-9_-]+/', '-', ltrim(trim($name), '-')) ?? '', '-');
+            $safeValue = trim(preg_replace('/[\r\n]+/', ' ', str_replace(['</', '{', '}', ';'], '', (string) $value)) ?? '');
+
+            if ($safeName === '' || $safeValue === '') {
+                continue;
+            }
+
+            $clean['--' . $safeName] = $safeValue;
+        }
+
+        return $clean;
+    }
+
     private function sanitizeOptions(array $options): array
     {
         $clean = [];
@@ -281,8 +320,14 @@ class PdfTemplateController extends Controller
             $clean['timeout'] = (int) $options['timeout'];
         }
 
+        $cssVariables = $this->sanitizeCssVariables($options['cssVariables'] ?? NULL);
+
+        if ($cssVariables !== []) {
+            $clean['cssVariables'] = $cssVariables;
+        }
+
         $boolFields = [
-            'watermarkBehind', 'preferCssPageSize', 'withViewer', 'quiet',
+            'watermarkBehind', 'smartShrinking', 'preferCssPageSize', 'withViewer', 'quiet',
         ];
 
         foreach ($boolFields as $boolField) {

@@ -69,6 +69,7 @@ class Pdf
 
     private const BOOL_OPTIONS = [
         'watermarkBehind' => 'watermarkBehind',
+        'smartShrinking' => 'smartShrinking',
         'preferCssPageSize' => 'preferCssPageSize',
         'withViewer' => 'withViewer',
         'quiet' => 'quiet',
@@ -132,6 +133,8 @@ class Pdf
 
     private ?string $baseUrl = NULL;
 
+    private bool $smartShrinking = FALSE;
+
     private ?bool $preferCssPageSize = NULL;
 
     private bool $quiet = TRUE;
@@ -157,6 +160,8 @@ class Pdf
     private string $theme = 'dark';
 
     private ?string $icon;
+
+    private array $cssVariables = [];
 
     private array $templateOptions = [];
 
@@ -437,6 +442,23 @@ class Pdf
         return $this;
     }
 
+    /**
+     * Shrink the rendered page just enough to pull overflowing content back
+     * inside the printable width, like wkhtmltopdf's smart shrinking. Disabled
+     * by default; it only ever scales down, never past 50%.
+     */
+    public function smartShrinking(bool $smartShrinking = TRUE): self
+    {
+        $this->smartShrinking = $smartShrinking;
+
+        return $this;
+    }
+
+    public function withoutSmartShrinking(): self
+    {
+        return $this->smartShrinking(FALSE);
+    }
+
     public function preferCssPageSize(bool $prefer = TRUE): self
     {
         $this->preferCssPageSize = $prefer;
@@ -602,6 +624,61 @@ class Pdf
         return $this;
     }
 
+    /**
+     * Merge a set of CSS custom properties applied at runtime to the rendered
+     * document and to the viewer. Keys may be given with or without the
+     * leading double dash (e.g. 'sn-accent' or '--sn-accent').
+     */
+    public function cssVariables(array $variables): self
+    {
+        foreach ($variables as $name => $value) {
+            $this->cssVariable((string) $name, $value);
+        }
+
+        return $this;
+    }
+
+    public function cssVars(array $variables): self
+    {
+        return $this->cssVariables($variables);
+    }
+
+    public function cssVariable(string $name, string|int|float|null $value): self
+    {
+        $normalized = $this->normalizeCssVariableName($name);
+
+        if ($normalized === NULL) {
+            return $this;
+        }
+
+        if ($value === NULL || trim((string) $value) === '') {
+            unset($this->cssVariables[$normalized]);
+
+            return $this;
+        }
+
+        $this->cssVariables[$normalized] = $this->normalizeCssVariableValue((string) $value);
+
+        return $this;
+    }
+
+    public function cssVar(string $name, string|int|float|null $value): self
+    {
+        return $this->cssVariable($name, $value);
+    }
+
+    public function withoutCssVariables(): self
+    {
+        $this->cssVariables = [];
+
+        return $this;
+    }
+
+    public function getCssVariables(): array
+    {
+        return $this->cssVariables;
+    }
+
     public function get(): string
     {
         return $this->renderPdfToBuffer();
@@ -740,6 +817,21 @@ class Pdf
         foreach (self::BOOL_OPTIONS as $key => $method) {
             if (isset($options[$key])) {
                 $this->{$method}(filter_var($options[$key], FILTER_VALIDATE_BOOLEAN));
+            }
+        }
+
+        if (filled($options['cssVariables'] ?? NULL)) {
+            $variables = $options['cssVariables'];
+
+            if (is_string($variables)) {
+                $variables = json_decode($variables, TRUE);
+            }
+
+            if (is_array($variables)) {
+                $this->cssVariables(array_map(
+                    fn ($value): string => $this->renderBlade((string) $value, $data),
+                    $variables
+                ));
             }
         }
 
@@ -928,6 +1020,78 @@ class Pdf
         };
     }
 
+    /**
+     * Accept 'sn-accent', '--sn-accent' or 'Sn Accent' and return '--sn-accent',
+     * or NULL when nothing usable remains after stripping unsafe characters.
+     */
+    private function normalizeCssVariableName(string $name): ?string
+    {
+        $trimmed = ltrim(trim($name), '-');
+        $safe = preg_replace('/[^A-Za-z0-9_-]+/', '-', $trimmed) ?? '';
+        $safe = trim($safe, '-');
+
+        return $safe === '' ? NULL : '--' . $safe;
+    }
+
+    /**
+     * Strip anything that could break out of the declaration block.
+     */
+    private function normalizeCssVariableValue(string $value): string
+    {
+        $clean = str_replace(['</', '{', '}', ';'], '', $value);
+        $clean = preg_replace('/[\r\n]+/', ' ', $clean) ?? '';
+
+        return trim($clean);
+    }
+
+    /**
+     * The declarations are emitted twice: once on :root and once on a
+     * high-specificity :root:root:root selector, both with !important, so they
+     * beat any :root block the content, header, footer or watermark defines
+     * for itself regardless of where that block sits in the document.
+     */
+    private function cssVariablesStyleBlock(): string
+    {
+        if ($this->cssVariables === []) {
+            return '';
+        }
+
+        $declarations = '';
+
+        foreach ($this->cssVariables as $name => $value) {
+            $declarations .= sprintf('%s:%s !important;', $name, $value);
+        }
+
+        return sprintf(
+            '<style id="pdf-css-variables">:root{%1$s}:root:root:root{%1$s}</style>',
+            $declarations
+        );
+    }
+
+    /**
+     * Inject the runtime variables as the last element of <body> (or the end of
+     * the document for a bare fragment) so they are the final :root declarations
+     * the parser sees and win the cascade against the document's own styles.
+     */
+    private function injectCssVariables(string $html): string
+    {
+        $style = $this->cssVariablesStyleBlock();
+
+        if ($style === '' || $html === '') {
+            return $html;
+        }
+
+        if (preg_match('/<\/body\s*>/i', $html) === 1) {
+            return preg_replace('/<\/body\s*>/i', $style . '</body>', $html, 1) ?? $html;
+        }
+
+        if (preg_match('/<\/html\s*>/i', $html) === 1) {
+            return preg_replace('/<\/html\s*>/i', $style . '</html>', $html, 1) ?? $html;
+        }
+
+        return $html . $style;
+    }
+
     private function normalizePath(string $path): string
     {
         return str_replace('\\', '/', $path);
@@ -976,7 +1140,7 @@ class Pdf
             $hasFragments = $this->headerHtml !== NULL || $this->footerHtml !== NULL || $this->watermarkHtml !== NULL;
 
             if ($hasFragments) {
-                $contentPath = $this->createTempHtmlFile($tempDir, 'pdf_content_', $this->contentHtml);
+                $contentPath = $this->createTempHtmlFile($tempDir, 'pdf_content_', $this->injectCssVariables($this->contentHtml));
                 $tempFiles[] = $contentPath;
                 $command[] = '--content';
                 $command[] = $contentPath;
@@ -989,21 +1153,21 @@ class Pdf
             $command[] = '-';
 
             if ($this->headerHtml !== NULL) {
-                $headerPath = $this->createTempHtmlFile($tempDir, 'pdf_header_', $this->headerHtml);
+                $headerPath = $this->createTempHtmlFile($tempDir, 'pdf_header_', $this->injectCssVariables($this->headerHtml));
                 $tempFiles[] = $headerPath;
                 $command[] = '--header';
                 $command[] = $headerPath;
             }
 
             if ($this->footerHtml !== NULL) {
-                $footerPath = $this->createTempHtmlFile($tempDir, 'pdf_footer_', $this->footerHtml);
+                $footerPath = $this->createTempHtmlFile($tempDir, 'pdf_footer_', $this->injectCssVariables($this->footerHtml));
                 $tempFiles[] = $footerPath;
                 $command[] = '--footer';
                 $command[] = $footerPath;
             }
 
             if ($this->watermarkHtml !== NULL) {
-                $watermarkPath = $this->createTempHtmlFile($tempDir, 'pdf_watermark_', $this->watermarkHtml);
+                $watermarkPath = $this->createTempHtmlFile($tempDir, 'pdf_watermark_', $this->injectCssVariables($this->watermarkHtml));
                 $tempFiles[] = $watermarkPath;
                 $command[] = '--watermark';
                 $command[] = $watermarkPath;
@@ -1093,6 +1257,10 @@ class Pdf
                 $command[] = (string) $this->scale;
             }
 
+            if ($this->smartShrinking) {
+                $command[] = '--smart-shrinking';
+            }
+
             if ($this->preferCssPageSize === TRUE) {
                 $command[] = '--prefer-css-page-size';
             }
@@ -1150,7 +1318,7 @@ class Pdf
             $process->setTimeout($this->timeout === NULL ? NULL : (float) $this->timeout);
 
             if (! $hasFragments) {
-                $process->setInput($this->contentHtml);
+                $process->setInput($this->injectCssVariables($this->contentHtml));
             }
 
             $process->run();

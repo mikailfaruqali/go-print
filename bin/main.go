@@ -51,6 +51,8 @@ Page setup:
   Headers and footers sit flush against the paper edge, like wkhtmltopdf, so a
   full-bleed band has no white strip. Use the offsets to inset them.
   --scale <n>             Render scale, 0.1 - 2.0 (default: 1.0)
+  --smart-shrinking       Shrink the page just enough to fit overflowing
+                          content inside the printable width (default: off)
   --prefer-css-page-size  Honour @page size in CSS instead of --paper
 
   Dimensions accept mm, cm, in, pt, px, or a bare number (millimetres):
@@ -141,6 +143,7 @@ type config struct {
 	headerSpacing, footerSpacing     string
 	headerOffset, footerOffset       string
 	scale                            float64
+	smartShrink                      bool
 	preferCSSPageSize                bool
 	watermarkOpacity                 float64
 	watermarkBehind                  bool
@@ -181,6 +184,7 @@ func parseFlags(cfg *config) error {
 	fs.StringVar(&cfg.headerOffset, "header-offset", "0", "")
 	fs.StringVar(&cfg.footerOffset, "footer-offset", "0", "")
 	fs.Float64Var(&cfg.scale, "scale", 1.0, "")
+	fs.BoolVar(&cfg.smartShrink, "smart-shrinking", false, "")
 	fs.BoolVar(&cfg.preferCSSPageSize, "prefer-css-page-size", false, "")
 	fs.Float64Var(&cfg.watermarkOpacity, "watermark-opacity", 0.3, "")
 	fs.BoolVar(&cfg.watermarkBehind, "watermark-behind", false, "")
