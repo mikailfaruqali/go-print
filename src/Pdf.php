@@ -163,6 +163,8 @@ class Pdf
 
     private array $cssVariables = [];
 
+    private array $cssFiles = [];
+
     private array $templateOptions = [];
 
     private array $templateData = [];
@@ -617,6 +619,42 @@ class Pdf
         return $this->theme($light ? 'light' : 'dark');
     }
 
+    /**
+     * Attach an external CSS file so its rules are inlined into the content,
+     * header, footer and watermark fragments sent to the pdf binary.
+     */
+    public function cssFile(string $path): self
+    {
+        $normalized = $this->normalizePath($path);
+
+        if (! in_array($normalized, $this->cssFiles, TRUE)) {
+            $this->cssFiles[] = $normalized;
+        }
+
+        return $this;
+    }
+
+    public function cssFiles(array $paths): self
+    {
+        foreach ($paths as $path) {
+            $this->cssFile((string) $path);
+        }
+
+        return $this;
+    }
+
+    public function withoutCssFiles(): self
+    {
+        $this->cssFiles = [];
+
+        return $this;
+    }
+
+    public function getCssFiles(): array
+    {
+        return $this->cssFiles;
+    }
+
     public function icon(?string $icon = NULL): self
     {
         $this->icon = $icon === NULL || trim($icon) === '' ? NULL : trim($icon);
@@ -682,6 +720,71 @@ class Pdf
     public function get(): string
     {
         return $this->renderPdfToBuffer();
+    }
+
+    /**
+     * Return the final, fully-resolved HTML for each fragment (content,
+     * header, footer, watermark) exactly as it would be written to the temp
+     * files and handed to the pdf binary — after template options, css
+     * variables, attached css files and the @font-face block are injected.
+     * Useful for inspecting why a font or style isn't showing up in the
+     * generated PDF.
+     */
+    /**
+     * Dump the resolved content/header/footer/watermark HTML and stop
+     * execution, the same way Laravel's dd() works. Safe to drop anywhere in
+     * a fluent chain regardless of the enclosing method's declared return
+     * type, since execution never returns to the caller.
+     */
+    public function ddHtml(?string $section = NULL): never
+    {
+        $this->debugHtml();
+    }
+
+    public function debugHtml(): array
+    {
+        if ($this->templateOptions !== []) {
+            $this->applyResolvedOptions($this->templateOptions, $this->templateData);
+        }
+
+        return [
+            'content' => $this->injectCssVariables($this->contentHtml),
+            'header' => $this->headerHtml === NULL ? NULL : $this->injectCssVariables($this->headerHtml),
+            'footer' => $this->footerHtml === NULL ? NULL : $this->injectCssVariables($this->footerHtml),
+            'watermark' => $this->watermarkHtml === NULL ? NULL : $this->injectCssVariables($this->watermarkHtml),
+        ];
+    }
+
+    /**
+     * Render all four fragments concatenated into one HTML page, each
+     * wrapped and labelled, so you can open it directly in a browser to see
+     * exactly what the pdf binary receives (fonts, css files, css variables
+     * included). Pass a section name ('content', 'header', 'footer',
+     * 'watermark') to inspect only that fragment.
+     */
+    public function dumpHtml(?string $section = NULL): Response
+    {
+        $fragments = $this->debugHtml();
+
+        if ($section !== NULL) {
+            $html = $fragments[$section] ?? sprintf('<p>No "%s" fragment is set.</p>', htmlspecialchars($section));
+
+            return new Response((string) $html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
+        }
+
+        $sections = '';
+
+        foreach ($fragments as $name => $html) {
+            $sections .= sprintf(
+                '<section style="border:2px dashed #888;margin:16px 0;"><h2 style="background:#222;color:#fff;padding:8px;margin:0;">%s</h2><iframe srcdoc="%s" style="width:100%%;height:600px;border:0;"></iframe></section>',
+                strtoupper($name),
+                $html === NULL ? '' : htmlspecialchars((string) $html, ENT_QUOTES, 'UTF-8')
+            );
+        }
+
+        $page = sprintf('<!doctype html><html><head><meta charset="utf-8"><title>PDF Debug</title></head><body>%s</body></html>', $sections);
+
+        return new Response($page, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
     }
 
     public function save(string|Closure $destination): mixed
@@ -831,6 +934,21 @@ class Pdf
                 $this->cssVariables(array_map(
                     fn ($value): string => $this->renderBlade((string) $value, $data),
                     $variables
+                ));
+            }
+        }
+
+        if (filled($options['cssFiles'] ?? NULL)) {
+            $cssFiles = $options['cssFiles'];
+
+            if (is_string($cssFiles)) {
+                $cssFiles = json_decode($cssFiles, TRUE) ?? [$cssFiles];
+            }
+
+            if (is_array($cssFiles)) {
+                $this->cssFiles(array_map(
+                    fn ($value): string => $this->renderBlade((string) $value, $data),
+                    $cssFiles
                 ));
             }
         }
@@ -1069,13 +1187,17 @@ class Pdf
     }
 
     /**
-     * Inject the runtime variables as the last element of <body> (or the end of
-     * the document for a bare fragment) so they are the final :root declarations
-     * the parser sees and win the cascade against the document's own styles.
+     * Inject the runtime variables, attached CSS files and the custom
+     *
+     * @font-face declaration as the last element of <body> (or the end of the
+     * document for a bare fragment) so they are the final declarations the
+     * parser sees and win the cascade against the document's own styles. This
+     * runs on the content, header, footer and watermark fragments alike so the
+     * custom font and attached stylesheets are available everywhere.
      */
     private function injectCssVariables(string $html): string
     {
-        $style = $this->cssVariablesStyleBlock();
+        $style = $this->fontFaceStyleBlock() . $this->cssFilesStyleBlock() . $this->cssVariablesStyleBlock();
 
         if ($style === '' || $html === '') {
             return $html;
@@ -1090,6 +1212,58 @@ class Pdf
         }
 
         return $html . $style;
+    }
+
+    /**
+     * Build a @font-face declaration from the configured font so it is
+     * available to the content, header, footer and watermark fragments.
+     */
+    private function fontFaceStyleBlock(): string
+    {
+        if ($this->fontPath === NULL || $this->fontPath === '' || ! is_file($this->fontPath) || ! is_readable($this->fontPath)) {
+            return '';
+        }
+
+        $contents = file_get_contents($this->fontPath);
+
+        if ($contents === FALSE) {
+            return '';
+        }
+
+        $family = $this->fontFamily ?: pathinfo($this->fontPath, PATHINFO_FILENAME);
+
+        return sprintf(
+            '<style id="pdf-font-face">@font-face{font-family:\'%s\';src:url(data:font/%s;base64,%s) format(\'%s\');font-weight:normal;font-style:normal;font-display:block;}</style>',
+            addslashes($family),
+            $this->fontMimeSubtype(),
+            base64_encode($contents),
+            $this->fontFormat()
+        );
+    }
+
+    /**
+     * Inline the contents of every attached CSS file so they apply to the
+     * content, header, footer and watermark fragments.
+     */
+    private function cssFilesStyleBlock(): string
+    {
+        if ($this->cssFiles === []) {
+            return '';
+        }
+
+        $css = '';
+
+        foreach ($this->cssFiles as $cssFile) {
+            if (is_file($cssFile) && is_readable($cssFile)) {
+                $contents = file_get_contents($cssFile);
+
+                if ($contents !== FALSE) {
+                    $css .= $contents . "\n";
+                }
+            }
+        }
+
+        return $css === '' ? '' : sprintf('<style id="pdf-css-files">%s</style>', $css);
     }
 
     private function normalizePath(string $path): string

@@ -71,6 +71,10 @@ use PDF\Pdf as PdfBuilder;
  * @method static PdfBuilder darkMode(bool $dark = true)
  * @method static PdfBuilder lightMode(bool $light = true)
  * @method static PdfBuilder icon(?string $icon = null)
+ * @method static PdfBuilder cssFile(string $path)
+ * @method static PdfBuilder cssFiles(array $paths)
+ * @method static PdfBuilder withoutCssFiles()
+ * @method static array getCssFiles()
  * @method static PdfBuilder when(mixed $value = null, ?callable $callback = null, ?callable $default = null)
  * @method static PdfBuilder unless(mixed $value = null, ?callable $callback = null, ?callable $default = null)
  * @method static string resolveBinaryPath()
@@ -80,6 +84,9 @@ use PDF\Pdf as PdfBuilder;
  * @method static mixed save(string|Closure $destination)
  * @method static mixed toFile(string|Closure $path)
  * @method static string get()
+ * @method static array debugHtml()
+ * @method static Response dumpHtml(?string $section = null)
+ * @method static never ddHtml(?string $section = null)
  *
  * @see PdfBuilder
  */
