@@ -723,6 +723,17 @@ class Pdf
     }
 
     /**
+     * Dump the resolved content/header/footer/watermark HTML and stop
+     * execution, the same way Laravel's dd() works. Safe to drop anywhere in
+     * a fluent chain regardless of the enclosing method's declared return
+     * type, since dd() exits before control returns to the caller.
+     */
+    public function ddHtml(?string $section = NULL): void
+    {
+        $this->debugHtml();
+    }
+
+    /**
      * Return the final, fully-resolved HTML for each fragment (content,
      * header, footer, watermark) exactly as it would be written to the temp
      * files and handed to the pdf binary — after template options, css
@@ -730,17 +741,6 @@ class Pdf
      * Useful for inspecting why a font or style isn't showing up in the
      * generated PDF.
      */
-    /**
-     * Dump the resolved content/header/footer/watermark HTML and stop
-     * execution, the same way Laravel's dd() works. Safe to drop anywhere in
-     * a fluent chain regardless of the enclosing method's declared return
-     * type, since execution never returns to the caller.
-     */
-    public function ddHtml(?string $section = NULL): never
-    {
-        $this->debugHtml();
-    }
-
     public function debugHtml(): array
     {
         if ($this->templateOptions !== []) {

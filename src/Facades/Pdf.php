@@ -86,7 +86,7 @@ use PDF\Pdf as PdfBuilder;
  * @method static string get()
  * @method static array debugHtml()
  * @method static Response dumpHtml(?string $section = null)
- * @method static never ddHtml(?string $section = null)
+ * @method static void ddHtml(?string $section = null)
  *
  * @see PdfBuilder
  */
