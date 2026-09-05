@@ -1215,29 +1215,38 @@ class Pdf
     }
 
     /**
-     * Build a @font-face declaration from the configured font so it is
-     * available to the content, header, footer and watermark fragments.
+     * Build the same font declaration used by the pdf viewer (see
+     * resolveViewerFontDetails()) and apply it to the content, header,
+     * footer and watermark fragments: an embedded @font-face when a
+     * readable font file is configured, plus a font-family rule using the
+     * resolved stack so the family/stack-only configuration (no file, e.g.
+     * a system or web font) behaves the same way here as it does in the
+     * viewer.
      */
     private function fontFaceStyleBlock(): string
     {
-        if ($this->fontPath === NULL || $this->fontPath === '' || ! is_file($this->fontPath) || ! is_readable($this->fontPath)) {
+        $fontDetails = $this->resolveViewerFontDetails();
+
+        if ($fontDetails['family'] === 'system-ui' && $fontDetails['base64'] === NULL) {
             return '';
         }
 
-        $contents = file_get_contents($this->fontPath);
+        $fontFace = '';
 
-        if ($contents === FALSE) {
-            return '';
+        if ($fontDetails['base64'] !== NULL) {
+            $fontFace = sprintf(
+                "@font-face{font-family:'%s';src:url(data:font/%s;base64,%s) format('%s');font-weight:normal;font-style:normal;font-display:block;}",
+                addslashes($fontDetails['family']),
+                $this->fontMimeSubtype(),
+                $fontDetails['base64'],
+                $this->fontFormat()
+            );
         }
-
-        $family = $this->fontFamily ?: pathinfo($this->fontPath, PATHINFO_FILENAME);
 
         return sprintf(
-            '<style id="pdf-font-face">@font-face{font-family:\'%s\';src:url(data:font/%s;base64,%s) format(\'%s\');font-weight:normal;font-style:normal;font-display:block;}</style>',
-            addslashes($family),
-            $this->fontMimeSubtype(),
-            base64_encode($contents),
-            $this->fontFormat()
+            '<style id="pdf-font-face">%shtml,body{font-family:%s;}</style>',
+            $fontFace,
+            $fontDetails['stack']
         );
     }
 
