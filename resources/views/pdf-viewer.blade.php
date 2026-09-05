@@ -432,8 +432,12 @@
 
                     DocumentElements.container.appendChild(canvas);
 
+                    var ctx = canvas.getContext('2d', { alpha: false });
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+
                     return page.render({
-                        canvasContext: canvas.getContext('2d'),
+                        canvasContext: ctx,
                         viewport: viewport,
                     }).promise;
                 });
@@ -531,7 +535,6 @@
                         cMapUrl: CMAP_URL,
                         cMapPacked: true,
                         standardFontDataUrl: STANDARD_FONT,
-                        disableFontFace: true,
                     })
                     .promise.then(function (pdfDoc) {
                         PdfViewerState.pdfDoc = pdfDoc;
