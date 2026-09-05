@@ -253,7 +253,6 @@
 
         .pdf-page {
             display: block;
-            border-radius: var(--sn-radius);
             box-shadow: var(--sn-shadow-page);
             flex-shrink: 0;
             background: #fff;
