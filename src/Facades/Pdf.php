@@ -75,6 +75,10 @@ use PDF\Pdf as PdfBuilder;
  * @method static PdfBuilder cssFiles(array $paths)
  * @method static PdfBuilder withoutCssFiles()
  * @method static array getCssFiles()
+ * @method static PdfBuilder cssUrl(string $url)
+ * @method static PdfBuilder cssUrls(array $urls)
+ * @method static PdfBuilder withoutCssUrls()
+ * @method static array getCssUrls()
  * @method static PdfBuilder when(mixed $value = null, ?callable $callback = null, ?callable $default = null)
  * @method static PdfBuilder unless(mixed $value = null, ?callable $callback = null, ?callable $default = null)
  * @method static string resolveBinaryPath()
@@ -86,7 +90,7 @@ use PDF\Pdf as PdfBuilder;
  * @method static string get()
  * @method static array debugHtml()
  * @method static Response dumpHtml(?string $section = null)
- * @method static void ddHtml(?string $section = null)
+ * @method static mixed ddHtml(?string $section = null)
  *
  * @see PdfBuilder
  */

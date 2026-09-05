@@ -165,6 +165,8 @@ class Pdf
 
     private array $cssFiles = [];
 
+    private array $cssUrls = [];
+
     private array $templateOptions = [];
 
     private array $templateData = [];
@@ -655,6 +657,41 @@ class Pdf
         return $this->cssFiles;
     }
 
+    /**
+     * Attach a CSS URL (e.g. '/assets/bundle/print-bundle.css') as a
+     * <link rel="stylesheet"> in the <head> of the content, header, footer
+     * and watermark fragments, instead of inlining the file's contents.
+     */
+    public function cssUrl(string $url): self
+    {
+        if (! in_array($url, $this->cssUrls, TRUE)) {
+            $this->cssUrls[] = $url;
+        }
+
+        return $this;
+    }
+
+    public function cssUrls(array $urls): self
+    {
+        foreach ($urls as $url) {
+            $this->cssUrl((string) $url);
+        }
+
+        return $this;
+    }
+
+    public function withoutCssUrls(): self
+    {
+        $this->cssUrls = [];
+
+        return $this;
+    }
+
+    public function getCssUrls(): array
+    {
+        return $this->cssUrls;
+    }
+
     public function icon(?string $icon = NULL): self
     {
         $this->icon = $icon === NULL || trim($icon) === '' ? NULL : trim($icon);
@@ -728,9 +765,11 @@ class Pdf
      * a fluent chain regardless of the enclosing method's declared return
      * type, since dd() exits before control returns to the caller.
      */
-    public function ddHtml(?string $section = NULL): void
+    public function ddHtml(?string $section = NULL): mixed
     {
-        $this->debugHtml();
+        $fragments = $this->debugHtml();
+
+        return dd($section === NULL ? $fragments : ($fragments[$section] ?? NULL));
     }
 
     /**
@@ -949,6 +988,21 @@ class Pdf
                 $this->cssFiles(array_map(
                     fn ($value): string => $this->renderBlade((string) $value, $data),
                     $cssFiles
+                ));
+            }
+        }
+
+        if (filled($options['cssUrls'] ?? NULL)) {
+            $cssUrls = $options['cssUrls'];
+
+            if (is_string($cssUrls)) {
+                $cssUrls = json_decode($cssUrls, TRUE) ?? [$cssUrls];
+            }
+
+            if (is_array($cssUrls)) {
+                $this->cssUrls(array_map(
+                    fn ($value): string => $this->renderBlade((string) $value, $data),
+                    $cssUrls
                 ));
             }
         }
@@ -1197,7 +1251,9 @@ class Pdf
      */
     private function injectCssVariables(string $html): string
     {
-        $style = $this->fontFaceStyleBlock() . $this->cssFilesStyleBlock() . $this->cssVariablesStyleBlock();
+        $html = $this->injectHeadAssets($html);
+
+        $style = $this->cssFilesStyleBlock() . $this->cssVariablesStyleBlock();
 
         if ($style === '' || $html === '') {
             return $html;
@@ -1212,6 +1268,42 @@ class Pdf
         }
 
         return $html . $style;
+    }
+
+    /**
+     * Add the @font-face declaration and every attached CSS url's
+     * <link rel="stylesheet"> into the fragment's <head> (created if
+     * missing) so they load the same way a normal page would reference
+     * a font or a shared stylesheet like /assets/bundle/print-bundle.css.
+     * Unlike the CSS variables/files style block, these don't need to win
+     * a cascade fight, so they belong in <head> rather than at the end of
+     * <body>.
+     */
+    private function injectHeadAssets(string $html): string
+    {
+        $assets = $this->fontFaceStyleBlock();
+
+        foreach ($this->cssUrls as $cssUrl) {
+            $assets .= sprintf('<link rel="stylesheet" href="%s">', htmlspecialchars($cssUrl, ENT_QUOTES, 'UTF-8'));
+        }
+
+        if ($assets === '' || $html === '') {
+            return $html;
+        }
+
+        if (preg_match('/<\/head\s*>/i', $html) === 1) {
+            return preg_replace('/<\/head\s*>/i', $assets . '</head>', $html, 1) ?? $html;
+        }
+
+        if (preg_match('/<head[^>]*>/i', $html) === 1) {
+            return preg_replace('/<head[^>]*>/i', '$0' . $assets, $html, 1) ?? $html;
+        }
+
+        if (preg_match('/<html[^>]*>/i', $html) === 1) {
+            return preg_replace('/<html[^>]*>/i', '$0<head>' . $assets . '</head>', $html, 1) ?? $html;
+        }
+
+        return sprintf('<head>%s</head>%s', $assets, $html);
     }
 
     /**
