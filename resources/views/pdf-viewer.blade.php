@@ -418,17 +418,19 @@
             renderPage: function (num) {
                 return PdfViewerState.pdfDoc.getPage(num).then(function (page) {
                     var dpr = window.devicePixelRatio || 1;
+                    var supersample = 2;
+                    var renderScale = dpr * supersample;
                     var cssWidth = PdfRenderer.displayWidth(page);
                     var naturalWidth = page.getViewport({ scale: 1 }).width;
 
-                    var viewport = page.getViewport({ scale: (cssWidth / naturalWidth) * dpr });
+                    var viewport = page.getViewport({ scale: (cssWidth / naturalWidth) * renderScale });
 
                     var canvas = document.createElement('canvas');
                     canvas.className = 'pdf-page';
                     canvas.width = Math.floor(viewport.width);
                     canvas.height = Math.floor(viewport.height);
                     canvas.style.width = cssWidth + 'px';
-                    canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
+                    canvas.style.height = Math.floor(viewport.height / renderScale) + 'px';
 
                     DocumentElements.container.appendChild(canvas);
 
@@ -535,6 +537,7 @@
                         cMapUrl: CMAP_URL,
                         cMapPacked: true,
                         standardFontDataUrl: STANDARD_FONT,
+                        disableFontFace: true,
                     })
                     .promise.then(function (pdfDoc) {
                         PdfViewerState.pdfDoc = pdfDoc;
